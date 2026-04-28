@@ -1,0 +1,6 @@
+.vercel
+.cursor
+backend/.env
+__pycache__/
+*.pyc
+backend/debug-46886c.log
