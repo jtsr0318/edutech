@@ -2,7 +2,9 @@
 
 ## 1) Railway → **edutech（Web 服务）** → Variables
 
-你已经配好 `DB_*` 引用 MySQL。请再确认有这两项（没有就新增）：
+你已经配好 `DB_*` 引用 MySQL。若部署日志仍出现 **连 `localhost` 的 MySQL** 报错，说明 Web 服务进程里 **`DB_HOST` / `MYSQLHOST` 实际没生效**；代码已支持直接读取 Railway 自带的 **`MYSQLHOST`、`MYSQLPORT`、`MYSQLUSER`、`MYSQLPASSWORD`、`MYSQLDATABASE`** 以及 **`MYSQL_URL`**。你也可以在 Web 服务里 **新增一条变量**：`MYSQL_URL` → Reference → `MySQL.MYSQL_URL`（内网连接串）。
+
+请再确认有这两项（没有就新增）：
 
 | 变量名 | 值 |
 |--------|-----|
