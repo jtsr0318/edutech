@@ -26,7 +26,7 @@ Run the SQL files in order:
 python run.py
 ```
 
-API base: `http://localhost:4000/api`
+API base: `https://<your-backend-url>/api`
 
 ## 4) Frontend Compatibility
 
