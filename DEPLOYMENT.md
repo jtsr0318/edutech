@@ -9,7 +9,7 @@
 
 ### Build + start
 - Build command: `pip install -r requirements.txt`
-- Start command: `gunicorn app:app`
+- Start command: `bash run_web.sh` (uses `wsgi:app`; avoids `app:app` breaking when cwd is `backend/`)
 
 ### Required environment variables
 - `SECRET_KEY`
