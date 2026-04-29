@@ -53,6 +53,14 @@
 
 ---
 
-## 6) 空数据库时
+## 6) 空数据库时（你现在就是「没有表」）
 
-若 Railway MySQL 是新的，需在库里执行一次 `backend/sql/schema.sql`（可用 Railway MySQL 插件里的连接方式或 `MYSQL_PUBLIC_URL`）。
+Railway 默认库名一般是 **`railway`**。不要用仓库里的 **`backend/sql/schema.sql` 直接整文件执行**，因为它开头有 `CREATE DATABASE edutech` 和 `USE edutech`，表会建到 **`edutech` 库里**，你在 **`railway`** 的 Data 面板里会一直看到「没有表」。
+
+请改用：
+
+- **`backend/sql/schema_railway_default_db.sql`**
+
+操作：**Railway → MySQL → Data**，打开 SQL 编辑器，把该文件 **全文粘贴** 进去执行。执行完后刷新，应能看到多张表。
+
+然后再触发 **edutech** 服务 **Redeploy**。
