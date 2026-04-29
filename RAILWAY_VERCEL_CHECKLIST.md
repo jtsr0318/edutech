@@ -13,6 +13,8 @@
 
 保存后会自动重新部署。
 
+**若一直 502 / health failed：** 在 **edutech → Settings** 看 **Root Directory**。若填了 `backend`，以前用 `gunicorn app:app` 时 Python 会导入 **`backend/app` 包**（只有 `create_app`，没有名为 `app` 的变量），**Worker 无法启动**。仓库已改为 **`run_web.sh` + `wsgi.py`**，在「根目录」或「backend 子目录」两种 cwd 下都会先 `cd` 到含 `wsgi.py` 的仓库根再启动；仍建议 Root Directory **留空**（用整个仓库为根）。
+
 ---
 
 ## 2) Railway → **edutech** → Settings → Networking
