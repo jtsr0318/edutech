@@ -1,0 +1,7 @@
+{
+  "name": "edutech-platform",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/vercel-build.mjs"
+  }
+}

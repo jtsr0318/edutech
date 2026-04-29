@@ -140,7 +140,28 @@ const data = {
   contentComments: [],
 };
 
-const API_BASE_URL = localStorage.getItem("edutech_api_base") || "http://localhost:4000/api";
+function resolveDefaultApiBase() {
+  if (typeof window === "undefined" || typeof window.location === "undefined") {
+    return "http://localhost:4000/api";
+  }
+  try {
+    const h = window.location.hostname || "";
+    if (h === "localhost" || h === "127.0.0.1") {
+      return "http://localhost:4000/api";
+    }
+    if (h.endsWith(".vercel.app") || h === "edutech-swart.vercel.app") {
+      const injected = String(window.EDUTECH_API_BASE_URL || "").trim();
+      if (injected) return injected;
+      return `${window.location.origin}/api`;
+    }
+  } catch (_) {}
+  return "http://localhost:4000/api";
+}
+
+const API_BASE_URL =
+  localStorage.getItem("edutech_api_base") ||
+  String(window.EDUTECH_API_BASE_URL || "").trim() ||
+  resolveDefaultApiBase();
 let forumSearchTerm = state.forumSearch;
 let courseSearchTerm = state.courseSearch;
 let filterState = {
