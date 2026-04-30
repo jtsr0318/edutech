@@ -1346,7 +1346,10 @@ function logout() {
   render();
 }
 
-function toggleDropdown() {
+function toggleDropdown(event) {
+  if (event && typeof event.stopPropagation === "function") {
+    event.stopPropagation();
+  }
   state.dropdownOpen = !state.dropdownOpen;
   render();
 }
@@ -1493,7 +1496,10 @@ function addNotification(title, text) {
   }
 }
 
-function openNotificationsCenter() {
+function openNotificationsCenter(event) {
+  if (event && typeof event.stopPropagation === "function") {
+    event.stopPropagation();
+  }
   state.notificationsOpen = !state.notificationsOpen;
   render();
 }
@@ -2216,7 +2222,7 @@ function nav() {
           .join("")}
       </div>
       <div class="user-wrap">
-        <button class="mail-button" title="Notifications" onclick="openNotificationsCenter()">✉${unread ? `<span class="mail-badge">${unread}</span>` : ""}</button>
+        <button class="mail-button" title="Notifications" onclick="openNotificationsCenter(event)">✉${unread ? `<span class="mail-badge">${unread}</span>` : ""}</button>
         <div class="notification-pop ${state.notificationsOpen ? "" : "hidden"}">
           <div class="split">
             <strong>Notifications</strong>
@@ -2239,7 +2245,7 @@ function nav() {
               .join("")}
           </div>
         </div>
-        <button class="user-button" onclick="toggleDropdown()">
+        <button class="user-button" onclick="toggleDropdown(event)">
           <span class="avatar-sample">U</span>
         </button>
         <div class="user-dropdown ${state.dropdownOpen ? "" : "hidden"}">
