@@ -48,7 +48,7 @@ def verify_password(user: User, raw_password: str):
 def login():
     body = request.get_json(silent=True) or {}
     email = (body.get("email") or "").strip().lower()
-    password = (body.get("password") or "").strip()
+    password = str(body.get("password") or "")
     # #region agent log
     _agent_log("initial", "H6", "auth.py:login:entry", "login endpoint hit", {"emailDomain": email.split("@")[-1] if "@" in email else "invalid"})
     # #endregion
@@ -112,9 +112,16 @@ def register():
 def admin_login():
     body = request.get_json(silent=True) or {}
     email = (body.get("email") or "").strip().lower()
-    password = (body.get("password") or "").strip()
+    password = str(body.get("password") or "")
 
-    user = User.query.filter_by(email=email).first()
+    user = (
+        User.query.filter(
+            db.func.lower(db.func.trim(User.email)) == email,
+            User.role == "admin",
+        )
+        .order_by(User.id.desc())
+        .first()
+    )
     # Bootstrap a first admin account when database is fresh on cloud.
     # Override via Railway Variables: ADMIN_EMAIL / ADMIN_PASSWORD.
     if not user:
@@ -131,9 +138,15 @@ def admin_login():
             db.session.commit()
 
     if not user:
+        # If email exists but not as admin, return explicit message.
+        non_admin_user = (
+            User.query.filter(db.func.lower(db.func.trim(User.email)) == email)
+            .order_by(User.id.desc())
+            .first()
+        )
+        if non_admin_user:
+            return {"message": "This account is not an admin account."}, 401
         return {"message": "Invalid admin credentials."}, 401
-    if user.role != "admin":
-        return {"message": "This account is not an admin account."}, 401
     valid, needs_upgrade = verify_password(user, password)
     if not valid:
         return {"message": "Invalid admin credentials."}, 401
