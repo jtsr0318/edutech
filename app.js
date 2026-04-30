@@ -5,9 +5,6 @@ const state = {
   authRole: "student",
   currentUser: null,
   authMode: "login",
-  showAuthPassword: false,
-  showAuthConfirmPassword: false,
-  showAdminPassword: false,
   authDraft: { name: "", email: "", password: "", confirmPassword: "" },
   mobileNavOpen: false,
   postLoginPage: "home",
@@ -436,8 +433,6 @@ function setPreLoginPage(page) {
 
 function setAuthMode(mode) {
   state.authMode = mode;
-  state.showAuthPassword = false;
-  state.showAuthConfirmPassword = false;
   render();
 }
 
@@ -448,15 +443,14 @@ function updateAuthDraft(key, value) {
   state.authDraft[key] = value;
 }
 
-function togglePasswordVisibility(kind) {
-  if (kind === "authPassword") {
-    state.showAuthPassword = !state.showAuthPassword;
-  } else if (kind === "authConfirmPassword") {
-    state.showAuthConfirmPassword = !state.showAuthConfirmPassword;
-  } else if (kind === "adminPassword") {
-    state.showAdminPassword = !state.showAdminPassword;
-  }
-  render();
+function togglePasswordVisibility(buttonEl, selector) {
+  if (!buttonEl || !selector) return;
+  const form = buttonEl.closest("form");
+  const input = (form || document).querySelector(selector);
+  if (!input) return;
+  const show = input.type === "password";
+  input.type = show ? "text" : "password";
+  buttonEl.textContent = show ? "Hide" : "Show";
 }
 
 function setPostLoginPage(page) {
@@ -2346,8 +2340,8 @@ function authView() {
         <div class="field">
           <label>Password</label>
           <div class="password-field">
-            <input type="${state.showAuthPassword ? "text" : "password"}" name="password" placeholder="Enter your password" value="${state.authDraft?.password || ""}" oninput="updateAuthDraft('password', this.value)" required />
-            <button type="button" class="button button-secondary compact-btn" onclick="togglePasswordVisibility('authPassword')">${state.showAuthPassword ? "Hide" : "Show"}</button>
+            <input type="password" name="password" placeholder="Enter your password" value="${state.authDraft?.password || ""}" oninput="updateAuthDraft('password', this.value)" required />
+            <button type="button" class="button button-secondary compact-btn" onclick="togglePasswordVisibility(this, 'input[name=&quot;password&quot;]')">Show</button>
           </div>
         </div>
         ${
@@ -2355,8 +2349,8 @@ function authView() {
             ? `<div class="field">
                 <label>Confirm Password</label>
                 <div class="password-field">
-                  <input type="${state.showAuthConfirmPassword ? "text" : "password"}" name="confirmPassword" placeholder="Re-enter password" value="${state.authDraft?.confirmPassword || ""}" oninput="updateAuthDraft('confirmPassword', this.value)" required />
-                  <button type="button" class="button button-secondary compact-btn" onclick="togglePasswordVisibility('authConfirmPassword')">${state.showAuthConfirmPassword ? "Hide" : "Show"}</button>
+                  <input type="password" name="confirmPassword" placeholder="Re-enter password" value="${state.authDraft?.confirmPassword || ""}" oninput="updateAuthDraft('confirmPassword', this.value)" required />
+                  <button type="button" class="button button-secondary compact-btn" onclick="togglePasswordVisibility(this, 'input[name=&quot;confirmPassword&quot;]')">Show</button>
                 </div>
               </div>`
             : ""
@@ -2380,8 +2374,8 @@ function adminAuthView() {
         <div class="field">
           <label>Password</label>
           <div class="password-field">
-            <input type="${state.showAdminPassword ? "text" : "password"}" name="password" placeholder="••••••••" required />
-            <button type="button" class="button button-secondary compact-btn" onclick="togglePasswordVisibility('adminPassword')">${state.showAdminPassword ? "Hide" : "Show"}</button>
+            <input type="password" name="password" placeholder="••••••••" required />
+            <button type="button" class="button button-secondary compact-btn" onclick="togglePasswordVisibility(this, 'input[name=&quot;password&quot;]')">Show</button>
           </div>
         </div>
         <div class="button-row">

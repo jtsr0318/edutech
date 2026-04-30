@@ -115,6 +115,21 @@ def admin_login():
     password = (body.get("password") or "").strip()
 
     user = User.query.filter_by(email=email).first()
+    # Bootstrap a first admin account when database is fresh on cloud.
+    # Override via Railway Variables: ADMIN_EMAIL / ADMIN_PASSWORD.
+    if not user:
+        boot_email = (os.getenv("ADMIN_EMAIL") or "admin@edutech.com").strip().lower()
+        boot_password = (os.getenv("ADMIN_PASSWORD") or "admin123").strip()
+        if email == boot_email and password == boot_password:
+            user = User(
+                name="Admin",
+                email=boot_email,
+                password=generate_password_hash(boot_password),
+                role="admin",
+            )
+            db.session.add(user)
+            db.session.commit()
+
     if not user:
         return {"message": "Invalid admin credentials."}, 401
     if user.role != "admin":
