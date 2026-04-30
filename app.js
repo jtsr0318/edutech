@@ -5,6 +5,9 @@ const state = {
   authRole: "student",
   currentUser: null,
   authMode: "login",
+  showAuthPassword: false,
+  showAuthConfirmPassword: false,
+  showAdminPassword: false,
   authDraft: { name: "", email: "", password: "", confirmPassword: "" },
   mobileNavOpen: false,
   postLoginPage: "home",
@@ -433,6 +436,8 @@ function setPreLoginPage(page) {
 
 function setAuthMode(mode) {
   state.authMode = mode;
+  state.showAuthPassword = false;
+  state.showAuthConfirmPassword = false;
   render();
 }
 
@@ -441,6 +446,17 @@ function updateAuthDraft(key, value) {
     state.authDraft = { name: "", email: "", password: "", confirmPassword: "" };
   }
   state.authDraft[key] = value;
+}
+
+function togglePasswordVisibility(kind) {
+  if (kind === "authPassword") {
+    state.showAuthPassword = !state.showAuthPassword;
+  } else if (kind === "authConfirmPassword") {
+    state.showAuthConfirmPassword = !state.showAuthConfirmPassword;
+  } else if (kind === "adminPassword") {
+    state.showAdminPassword = !state.showAdminPassword;
+  }
+  render();
 }
 
 function setPostLoginPage(page) {
@@ -2329,13 +2345,19 @@ function authView() {
         </div>
         <div class="field">
           <label>Password</label>
-          <input type="password" name="password" placeholder="Enter your password" value="${state.authDraft?.password || ""}" oninput="updateAuthDraft('password', this.value)" required />
+          <div class="password-field">
+            <input type="${state.showAuthPassword ? "text" : "password"}" name="password" placeholder="Enter your password" value="${state.authDraft?.password || ""}" oninput="updateAuthDraft('password', this.value)" required />
+            <button type="button" class="button button-secondary compact-btn" onclick="togglePasswordVisibility('authPassword')">${state.showAuthPassword ? "Hide" : "Show"}</button>
+          </div>
         </div>
         ${
           state.authMode === "register"
             ? `<div class="field">
                 <label>Confirm Password</label>
-                <input type="password" name="confirmPassword" placeholder="Re-enter password" value="${state.authDraft?.confirmPassword || ""}" oninput="updateAuthDraft('confirmPassword', this.value)" required />
+                <div class="password-field">
+                  <input type="${state.showAuthConfirmPassword ? "text" : "password"}" name="confirmPassword" placeholder="Re-enter password" value="${state.authDraft?.confirmPassword || ""}" oninput="updateAuthDraft('confirmPassword', this.value)" required />
+                  <button type="button" class="button button-secondary compact-btn" onclick="togglePasswordVisibility('authConfirmPassword')">${state.showAuthConfirmPassword ? "Hide" : "Show"}</button>
+                </div>
               </div>`
             : ""
         }
@@ -2357,7 +2379,10 @@ function adminAuthView() {
         </div>
         <div class="field">
           <label>Password</label>
-          <input type="password" name="password" placeholder="••••••••" required />
+          <div class="password-field">
+            <input type="${state.showAdminPassword ? "text" : "password"}" name="password" placeholder="••••••••" required />
+            <button type="button" class="button button-secondary compact-btn" onclick="togglePasswordVisibility('adminPassword')">${state.showAdminPassword ? "Hide" : "Show"}</button>
+          </div>
         </div>
         <div class="button-row">
           <button class="button button-secondary" type="button" onclick="setPreLoginPage('landing')">Back</button>

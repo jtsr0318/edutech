@@ -53,12 +53,15 @@ def login():
     _agent_log("initial", "H6", "auth.py:login:entry", "login endpoint hit", {"emailDomain": email.split("@")[-1] if "@" in email else "invalid"})
     # #endregion
 
-    user = User.query.filter_by(email=email, role="user").first()
-    if not user:
+    any_user = User.query.filter_by(email=email).first()
+    if not any_user:
         # #region agent log
         _agent_log("initial", "H6", "auth.py:login:userLookup", "user not found", {"email": email})
         # #endregion
         return {"message": "Invalid credentials."}, 401
+    if any_user.role == "admin":
+        return {"message": "This is an admin account. Please use Admin Login."}, 401
+    user = any_user
     valid, needs_upgrade = verify_password(user, password)
     if not valid:
         # #region agent log
@@ -111,9 +114,11 @@ def admin_login():
     email = (body.get("email") or "").strip().lower()
     password = (body.get("password") or "").strip()
 
-    user = User.query.filter_by(email=email, role="admin").first()
+    user = User.query.filter_by(email=email).first()
     if not user:
         return {"message": "Invalid admin credentials."}, 401
+    if user.role != "admin":
+        return {"message": "This account is not an admin account."}, 401
     valid, needs_upgrade = verify_password(user, password)
     if not valid:
         return {"message": "Invalid admin credentials."}, 401
