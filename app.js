@@ -3658,6 +3658,9 @@ function bookstoreView() {
 }
 
 function profileView() {
+  const safeName = escapeHtml(String(state.profileDraft?.name ?? ""));
+  const safeEmail = escapeHtml(String(state.profileDraft?.email ?? ""));
+  const safeBio = escapeHtml(String(state.profileDraft?.bio ?? ""));
   return `
     <div class="page wide-page fixed-frame">
       ${nav()}
@@ -3667,15 +3670,15 @@ function profileView() {
           <p class="muted">Update your personal information and account preferences.</p>
           <div class="field">
             <label>Full Name</label>
-            <input type="text" value="${state.profileDraft.name}" oninput="updateProfileField('name', this.value)" />
+            <input type="text" value="${safeName}" oninput="updateProfileField('name', this.value)" />
           </div>
           <div class="field">
             <label>Email</label>
-            <input type="email" value="${state.profileDraft.email}" oninput="updateProfileField('email', this.value)" />
+            <input type="email" value="${safeEmail}" oninput="updateProfileField('email', this.value)" />
           </div>
           <div class="field">
             <label>Bio</label>
-            <textarea placeholder="Tell us about yourself" oninput="updateProfileField('bio', this.value)">${state.profileDraft.bio}</textarea>
+            <textarea placeholder="Tell us about yourself" oninput="updateProfileField('bio', this.value)">${safeBio}</textarea>
           </div>
           <button class="button button-primary" onclick="saveProfile()">Save Changes</button>
         </div>
