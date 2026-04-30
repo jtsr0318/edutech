@@ -149,11 +149,10 @@ function resolveDefaultApiBase() {
     if (h === "localhost" || h === "127.0.0.1") {
       return "http://localhost:4000/api";
     }
-    if (h.endsWith(".vercel.app") || h === "edutech-swart.vercel.app") {
-      const injected = String(window.EDUTECH_API_BASE_URL || "").trim();
-      if (injected) return injected;
-      return `${window.location.origin}/api`;
-    }
+    const injected = String(window.EDUTECH_API_BASE_URL || "").trim();
+    if (injected) return injected;
+    // For any deployed domain, default to same-origin API path.
+    return `${window.location.origin}/api`;
   } catch (_) {}
   return "http://localhost:4000/api";
 }
@@ -183,21 +182,6 @@ function escapeHtml(value) {
 }
 
 async function apiRequest(path, options = {}) {
-  // #region agent log
-  fetch("http://127.0.0.1:7411/ingest/0655cd4f-2f19-4d5d-ab84-a3bcdb60b5d4", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "46886c" },
-    body: JSON.stringify({
-      sessionId: "46886c",
-      runId: "initial",
-      hypothesisId: "H1",
-      location: "app.js:apiRequest:entry",
-      message: "apiRequest called",
-      data: { path, method: options.method || "GET", hasToken: !!state.authToken },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
   const hasFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
   const headers = {
     ...(hasFormData ? {} : { "Content-Type": "application/json" }),
@@ -217,21 +201,6 @@ async function apiRequest(path, options = {}) {
   } catch {
     payload = {};
   }
-  // #region agent log
-  fetch("http://127.0.0.1:7411/ingest/0655cd4f-2f19-4d5d-ab84-a3bcdb60b5d4", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "46886c" },
-    body: JSON.stringify({
-      sessionId: "46886c",
-      runId: "initial",
-      hypothesisId: "H2",
-      location: "app.js:apiRequest:response",
-      message: "apiRequest response received",
-      data: { path, status: res.status, ok: res.ok, message: payload?.message || "" },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
   if (!res.ok) {
     throw new Error(payload.message || `API request failed: ${res.status}`);
   }
@@ -536,21 +505,6 @@ async function login(event) {
   submitBtn.textContent = "Loading...";
   pushToast("loading", "Processing login...", 900);
   try {
-    // #region agent log
-    fetch("http://127.0.0.1:7411/ingest/0655cd4f-2f19-4d5d-ab84-a3bcdb60b5d4", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "46886c" },
-      body: JSON.stringify({
-        sessionId: "46886c",
-        runId: "initial",
-        hypothesisId: "H3",
-        location: "app.js:login:beforeApi",
-        message: "login submit",
-        data: { emailDomain: email.includes("@") ? email.split("@")[1] : "invalid" },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     const res = await loginUser({ email, password });
     if (res.status === "success") {
       data.user = res.user || data.user;
@@ -571,21 +525,6 @@ async function login(event) {
       pushToast("error", "Invalid credentials.");
     }
   } catch (err) {
-    // #region agent log
-    fetch("http://127.0.0.1:7411/ingest/0655cd4f-2f19-4d5d-ab84-a3bcdb60b5d4", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "46886c" },
-      body: JSON.stringify({
-        sessionId: "46886c",
-        runId: "initial",
-        hypothesisId: "H4",
-        location: "app.js:login:catch",
-        message: "login failed in catch",
-        data: { error: err?.message || "unknown" },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     pushToast("error", err?.message || "Login failed.");
   } finally {
     submitBtn.disabled = false;
@@ -625,21 +564,6 @@ async function register(event) {
   submitBtn.textContent = "Loading...";
   pushToast("loading", "Creating account...", 900);
   try {
-    // #region agent log
-    fetch("http://127.0.0.1:7411/ingest/0655cd4f-2f19-4d5d-ab84-a3bcdb60b5d4", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "46886c" },
-      body: JSON.stringify({
-        sessionId: "46886c",
-        runId: "initial",
-        hypothesisId: "H5",
-        location: "app.js:register:beforeApi",
-        message: "register submit",
-        data: { hasName: !!name, emailDomain: email.includes("@") ? email.split("@")[1] : "invalid" },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     const res = await registerUser({ name, email, password });
     if (res.status === "success") {
       data.user = res.user;
@@ -660,21 +584,6 @@ async function register(event) {
       pushToast("error", res.message || "Registration failed.");
     }
   } catch (err) {
-    // #region agent log
-    fetch("http://127.0.0.1:7411/ingest/0655cd4f-2f19-4d5d-ab84-a3bcdb60b5d4", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "46886c" },
-      body: JSON.stringify({
-        sessionId: "46886c",
-        runId: "initial",
-        hypothesisId: "H5",
-        location: "app.js:register:catch",
-        message: "register failed in catch",
-        data: { error: err?.message || "unknown" },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     pushToast("error", err?.message || "Registration failed.");
   } finally {
     submitBtn.disabled = false;
