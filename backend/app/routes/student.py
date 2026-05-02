@@ -314,8 +314,9 @@ def list_assignments():
             Submission,
             db.and_(Submission.assignment_id == Assignment.id, Submission.user_id == g.current_user.id),
         )
-        .filter(db.or_(Assignment.publish_at.is_(None), Assignment.publish_at <= now))
     )
+    if not _is_admin_user():
+        q = q.filter(db.or_(Assignment.publish_at.is_(None), Assignment.publish_at <= now))
     if eids is not None:
         q = q.filter(Assignment.course_id.in_(eids))
     rows = q.order_by(Assignment.created_at.asc()).all()
@@ -375,11 +376,9 @@ def list_announcements():
     eids = None if _is_admin_user() else _enrolled_course_ids(g.current_user.id)
     if eids is not None and not eids:
         return {"items": []}
-    q = (
-        db.session.query(Announcement, Course)
-        .join(Course, Announcement.course_id == Course.id)
-        .filter(db.or_(Announcement.publish_at.is_(None), Announcement.publish_at <= now))
-    )
+    q = db.session.query(Announcement, Course).join(Course, Announcement.course_id == Course.id)
+    if not _is_admin_user():
+        q = q.filter(db.or_(Announcement.publish_at.is_(None), Announcement.publish_at <= now))
     if eids is not None:
         q = q.filter(Announcement.course_id.in_(eids))
     rows = q.order_by(Announcement.created_at.desc()).all()
@@ -406,7 +405,9 @@ def list_materials():
     eids = None if _is_admin_user() else _enrolled_course_ids(g.current_user.id)
     if eids is not None and not eids:
         return {"items": []}
-    mq = Material.query.filter(db.or_(Material.publish_at.is_(None), Material.publish_at <= now))
+    mq = Material.query
+    if not _is_admin_user():
+        mq = mq.filter(db.or_(Material.publish_at.is_(None), Material.publish_at <= now))
     if eids is not None:
         mq = mq.filter(Material.course_id.in_(eids))
     rows = mq.order_by(Material.created_at.desc()).all()
@@ -434,7 +435,7 @@ def download_material_file(material_id):
     if not _is_admin_user() and row.course_id not in _enrolled_course_ids(g.current_user.id):
         return {"message": "Forbidden"}, 403
     now = datetime.utcnow()
-    if row.publish_at and row.publish_at > now:
+    if not _is_admin_user() and row.publish_at and row.publish_at > now:
         return {"message": "Not yet available"}, 403
     blob = row.file_blob
     if blob:
@@ -461,7 +462,7 @@ def download_assignment_attachment(assignment_id):
     if not _is_admin_user() and row.course_id not in _enrolled_course_ids(g.current_user.id):
         return {"message": "Forbidden"}, 403
     now = datetime.utcnow()
-    if row.publish_at and row.publish_at > now:
+    if not _is_admin_user() and row.publish_at and row.publish_at > now:
         return {"message": "Not yet available"}, 403
     blob = row.attachment_blob
     if blob:
