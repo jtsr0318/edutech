@@ -479,16 +479,19 @@ async function loadDataDrivenCollections() {
   syncSelectedCourseWithEnrollments();
 }
 
-/** If the sidebar course name is not in the enrolled list (e.g. default "Web Technology"), switch to the first real course so Material/Announcements tabs filter correctly. */
+/** If the sidebar course name is not in the enrolled list (e.g. default "Web Technology"), switch to a real course so Material/Announcements tabs filter correctly. Prefer a course that already has materials. */
 function syncSelectedCourseWithEnrollments() {
   const courses = data.courses || [];
   if (!courses.length) {
     return;
   }
   const ok = courses.some((c) => c.name === state.selectedCourse);
-  if (!ok) {
-    state.selectedCourse = courses[0].name;
+  if (ok) {
+    return;
   }
+  const materialCourseIds = new Set((data.materials || []).map((m) => String(m.courseId)));
+  const withMaterial = courses.find((c) => materialCourseIds.has(String(c.id)));
+  state.selectedCourse = (withMaterial || courses[0]).name;
 }
 
 async function fetchCourseProgress(courseId) {
@@ -3707,7 +3710,14 @@ function renderCourseTabContent() {
       </div>
       ${
         !courseMaterials.length
-          ? `<article class="card course-tab-card"><p class="muted">No materials yet. Admin has not uploaded any class material.</p></article>`
+          ? (() => {
+              const anyForUser = (data.materials || []).length > 0;
+              const hint =
+                anyForUser && selectedCourseId
+                  ? "This course has no materials here. Your account may have materials under another enrolled course — use the course pills on the left to switch."
+                  : "No materials yet. Admin has not uploaded any class material for this course.";
+              return `<article class="card course-tab-card"><p class="muted">${hint}</p></article>`;
+            })()
           : ""
       }
       ${courseMaterials

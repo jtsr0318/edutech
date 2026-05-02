@@ -401,13 +401,12 @@ def list_announcements():
 @student_bp.get("/materials")
 @require_auth()
 def list_materials():
-    now = datetime.utcnow()
     eids = None if _is_admin_user() else _enrolled_course_ids(g.current_user.id)
     if eids is not None and not eids:
         return {"items": []}
+    # List all materials for enrolled courses; publish time is enforced on download only
+    # so students always see rows and scheduled items are not "missing" from the UI.
     mq = Material.query
-    if not _is_admin_user():
-        mq = mq.filter(db.or_(Material.publish_at.is_(None), Material.publish_at <= now))
     if eids is not None:
         mq = mq.filter(Material.course_id.in_(eids))
     rows = mq.order_by(Material.created_at.desc()).all()
