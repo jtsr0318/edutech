@@ -303,6 +303,13 @@ function persistSession() {
       token: state.authToken || "",
       role: state.authRole || "student",
       user: state.currentUser || null,
+      page: state.page,
+      postLoginPage: state.postLoginPage,
+      selectedCourse: state.selectedCourse,
+      courseTab: state.courseTab,
+      adminPage: state.adminPage,
+      adminStreamCourseId: state.adminStreamCourseId || "",
+      adminStudioTab: state.adminStudioTab || "materials",
     })
   );
 }
@@ -345,7 +352,30 @@ function loadSessionFromStorage() {
     state.authRole = session.role || "student";
     state.currentUser = session.user || null;
     state.isLoggedIn = true;
-    state.page = state.authRole === "admin" ? "admin" : "landing";
+    if (state.authRole === "admin") {
+      state.page = session.page === "admin" ? "admin" : "admin";
+      state.adminPage = session.adminPage || "dashboard";
+      state.adminStreamCourseId = String(session.adminStreamCourseId ?? "");
+      state.adminStudioTab = ["materials", "announcements", "assignments"].includes(session.adminStudioTab)
+        ? session.adminStudioTab
+        : "materials";
+      state.adminMaterialForm.courseId = state.adminStreamCourseId;
+      state.adminAnnouncementForm.courseId = state.adminStreamCourseId;
+      state.adminAssignmentForm.courseId = state.adminStreamCourseId;
+      state.adminCommentForm.courseId = state.adminStreamCourseId;
+    } else {
+      state.page = "landing";
+      const allowed = new Set(["home", "courses", "courseDetail", "forum", "bookstore", "profile", "payment"]);
+      const pl = session.postLoginPage;
+      state.postLoginPage = allowed.has(pl) ? pl : "home";
+      if (typeof session.selectedCourse === "string" && session.selectedCourse.trim()) {
+        state.selectedCourse = session.selectedCourse.trim();
+      }
+      const tabs = new Set(["Announcements", "Material", "Assignment"]);
+      if (session.courseTab && tabs.has(session.courseTab)) {
+        state.courseTab = session.courseTab;
+      }
+    }
   } catch {}
 }
 
@@ -477,6 +507,7 @@ async function loadDataDrivenCollections() {
       .map((item) => [item.id, item.quizHistory])
   );
   syncSelectedCourseWithEnrollments();
+  if (state.isLoggedIn) persistSession();
 }
 
 /** If the sidebar course name is not in the enrolled list (e.g. default "Web Technology"), switch to a real course so Material/Announcements tabs filter correctly. Prefer a course that already has materials. */
@@ -571,6 +602,7 @@ function setPostLoginPage(page) {
   state.notificationsOpen = false;
   state.mobileNavOpen = false;
   if (page !== "forum") state.forumViewingPost = null;
+  if (state.isLoggedIn) persistSession();
   render();
   if (page === "courses") {
     refreshCourseProgress().then(() => render());
@@ -584,12 +616,14 @@ function toggleMobileNav() {
 
 function setCourseTab(tab) {
   state.courseTab = tab;
+  if (state.isLoggedIn) persistSession();
   render();
 }
 
 async function setCourse(courseName) {
   state.selectedCourse = courseName;
   state.postLoginPage = "courseDetail";
+  if (state.isLoggedIn) persistSession();
   const course = data.courses.find((c) => c.name === courseName);
   if (course?.id && state.isLoggedIn) {
     try {
@@ -758,6 +792,7 @@ async function adminLogin(event) {
 
 function setAdminPage(page) {
   state.adminPage = page;
+  if (state.isLoggedIn) persistSession();
   refreshAdminPageData();
 }
 
@@ -768,6 +803,7 @@ function updateAdminCourseForm(key, value) {
 function setAdminStudioTab(tab) {
   const next = String(tab || "materials");
   state.adminStudioTab = ["materials", "announcements", "assignments"].includes(next) ? next : "materials";
+  if (state.isLoggedIn) persistSession();
   render();
 }
 
@@ -792,6 +828,7 @@ function setAdminStreamCourse(courseId) {
   if (!normalized) {
     state.adminEnrollments = [];
   }
+  if (state.isLoggedIn) persistSession();
   render();
   if (normalized) {
     adminFetchEnrollments(normalized)
@@ -817,6 +854,7 @@ function editAdminCourse(courseId) {
   state.adminAnnouncementForm.courseId = String(course.id || "");
   state.adminAssignmentForm.courseId = String(course.id || "");
   state.adminCommentForm.courseId = String(course.id || "");
+  if (state.isLoggedIn) persistSession();
   render();
   adminFetchEnrollments(String(course.id || ""))
     .then(() => render())
@@ -1568,6 +1606,8 @@ function logout() {
     unreadCount: 0,
   };
   state.courseTab = "Announcements";
+  state.postLoginPage = "home";
+  state.selectedCourse = "Web Technology";
   state.dropdownOpen = false;
   render();
 }

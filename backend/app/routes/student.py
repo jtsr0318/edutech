@@ -433,9 +433,6 @@ def download_material_file(material_id):
         return {"message": "Not found"}, 404
     if not _is_admin_user() and row.course_id not in _enrolled_course_ids(g.current_user.id):
         return {"message": "Forbidden"}, 403
-    now = datetime.utcnow()
-    if not _is_admin_user() and row.publish_at and row.publish_at > now:
-        return {"message": "Not yet available"}, 403
     blob = row.file_blob
     if blob:
         return Response(
@@ -460,9 +457,6 @@ def download_assignment_attachment(assignment_id):
         return {"message": "Not found"}, 404
     if not _is_admin_user() and row.course_id not in _enrolled_course_ids(g.current_user.id):
         return {"message": "Forbidden"}, 403
-    now = datetime.utcnow()
-    if not _is_admin_user() and row.publish_at and row.publish_at > now:
-        return {"message": "Not yet available"}, 403
     blob = row.attachment_blob
     if blob:
         name = f"{row.title or 'assignment'}-attachment"
