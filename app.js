@@ -476,6 +476,19 @@ async function loadDataDrivenCollections() {
       .filter((item) => item.quizHistory)
       .map((item) => [item.id, item.quizHistory])
   );
+  syncSelectedCourseWithEnrollments();
+}
+
+/** If the sidebar course name is not in the enrolled list (e.g. default "Web Technology"), switch to the first real course so Material/Announcements tabs filter correctly. */
+function syncSelectedCourseWithEnrollments() {
+  const courses = data.courses || [];
+  if (!courses.length) {
+    return;
+  }
+  const ok = courses.some((c) => c.name === state.selectedCourse);
+  if (!ok) {
+    state.selectedCourse = courses[0].name;
+  }
 }
 
 async function fetchCourseProgress(courseId) {
@@ -3733,6 +3746,7 @@ function renderCourseTabContent() {
 }
 
 function courseView() {
+  syncSelectedCourseWithEnrollments();
   const courses = getEffectiveCourses();
   const activeCourse = courses.find((course) => course.name === state.selectedCourse);
   const activeCourseProgress = Number(activeCourse?.progress || 0);
