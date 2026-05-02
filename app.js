@@ -297,21 +297,26 @@ async function apiRequest(path, options = {}) {
 }
 
 function persistSession() {
-  localStorage.setItem(
-    "edutech_session",
-    JSON.stringify({
-      token: state.authToken || "",
-      role: state.authRole || "student",
-      user: state.currentUser || null,
-      page: state.page,
-      postLoginPage: state.postLoginPage,
-      selectedCourse: state.selectedCourse,
-      courseTab: state.courseTab,
-      adminPage: state.adminPage,
-      adminStreamCourseId: state.adminStreamCourseId || "",
-      adminStudioTab: state.adminStudioTab || "materials",
-    })
-  );
+  try {
+    localStorage.setItem(
+      "edutech_session",
+      JSON.stringify({
+        token: state.authToken || "",
+        role: state.authRole || "student",
+        user: state.currentUser || null,
+        page: state.page,
+        postLoginPage: state.postLoginPage,
+        selectedCourse: state.selectedCourse,
+        courseTab: state.courseTab,
+        adminPage: state.adminPage,
+        adminStreamCourseId: state.adminStreamCourseId || "",
+        adminStudioTab: state.adminStudioTab || "materials",
+      })
+    );
+  } catch (_) {
+    /* localStorage full or disabled — URL hash still records the view */
+  }
+  syncEduHashFromState();
 }
 
 function persistAdminStudioDrafts() {
@@ -340,6 +345,112 @@ function loadAdminStudioDrafts() {
 
 function clearSession() {
   localStorage.removeItem("edutech_session");
+}
+
+/** Route snapshot in the URL hash survives full page reload reliably (same as address bar). */
+const EDU_HASH_PREFIX = "edu=";
+
+function clearEduRouteHash() {
+  try {
+    const path = window.location.pathname + window.location.search;
+    if (window.location.hash) {
+      history.replaceState(history.state, "", path);
+    }
+  } catch (_) {}
+}
+
+function buildEduHashQuery() {
+  if (!state.isLoggedIn) return "";
+  if (state.authRole === "admin") {
+    const sp = new URLSearchParams();
+    sp.set("role", "admin");
+    sp.set("adminTab", state.adminPage || "dashboard");
+    if (state.adminPage === "courses") {
+      if (state.adminStreamCourseId) sp.set("stream", state.adminStreamCourseId);
+      sp.set("studio", state.adminStudioTab || "materials");
+    }
+    return EDU_HASH_PREFIX + sp.toString();
+  }
+  if (state.authRole === "student") {
+    const sp = new URLSearchParams();
+    sp.set("role", "student");
+    sp.set("view", state.postLoginPage || "home");
+    if (state.postLoginPage === "courseDetail") {
+      if (state.selectedCourse) sp.set("course", state.selectedCourse);
+      if (state.courseTab) sp.set("tab", state.courseTab);
+    }
+    return EDU_HASH_PREFIX + sp.toString();
+  }
+  return "";
+}
+
+function syncEduHashFromState() {
+  if (typeof window === "undefined" || !state.isLoggedIn) return;
+  try {
+    const q = buildEduHashQuery();
+    const path = window.location.pathname + window.location.search;
+    if (!q) {
+      if (window.location.hash) history.replaceState(history.state, "", path);
+      return;
+    }
+    const next = `${path}#${q}`;
+    const cur = path + (window.location.hash || "");
+    if (cur !== next) {
+      history.replaceState(history.state, "", next);
+    }
+  } catch (_) {}
+}
+
+/** Apply #edu=... view; hash wins over localStorage when both exist (refresh keeps hash). */
+function applyEduHashToState() {
+  if (typeof window === "undefined" || !state.isLoggedIn) return false;
+  const raw = (window.location.hash || "").replace(/^#/, "");
+  if (!raw.startsWith(EDU_HASH_PREFIX)) return false;
+  let sp;
+  try {
+    sp = new URLSearchParams(raw.slice(EDU_HASH_PREFIX.length));
+  } catch {
+    return false;
+  }
+  const role = sp.get("role");
+  const studentViews = new Set(["home", "courses", "courseDetail", "forum", "bookstore", "profile", "payment"]);
+  const courseTabs = new Set(["Announcements", "Material", "Assignment"]);
+  const adminTabs = new Set(["dashboard", "courses", "books", "forum", "users", "support"]);
+  const studioTabs = new Set(["materials", "announcements", "assignments"]);
+
+  if (role === "student" && state.authRole === "student") {
+    const view = sp.get("view");
+    if (!view || !studentViews.has(view)) return false;
+    state.postLoginPage = view;
+    if (sp.has("course")) {
+      const c = sp.get("course");
+      if (c) state.selectedCourse = c;
+    }
+    if (sp.has("tab")) {
+      const tab = sp.get("tab");
+      if (tab && courseTabs.has(tab)) state.courseTab = tab;
+    }
+    return true;
+  }
+  if (role === "admin" && state.authRole === "admin") {
+    const ap = sp.get("adminTab");
+    if (!ap || !adminTabs.has(ap)) return false;
+    state.adminPage = ap;
+    if (sp.has("stream")) {
+      const stream = sp.get("stream") || "";
+      state.adminStreamCourseId = stream;
+      state.adminMaterialForm.courseId = stream;
+      state.adminAnnouncementForm.courseId = stream;
+      state.adminAssignmentForm.courseId = stream;
+      state.adminCommentForm.courseId = stream;
+    }
+    if (sp.has("studio")) {
+      const st = sp.get("studio");
+      if (st && studioTabs.has(st)) state.adminStudioTab = st;
+    }
+    return true;
+  }
+  return false;
 }
 
 function loadSessionFromStorage() {
@@ -376,6 +487,7 @@ function loadSessionFromStorage() {
         state.courseTab = session.courseTab;
       }
     }
+    applyEduHashToState();
   } catch {}
 }
 
@@ -568,6 +680,9 @@ function dismissToast(id) {
 function setPreLoginPage(page) {
   state.page = page;
   state.mobileNavOpen = false;
+  if (!state.isLoggedIn && (page === "landing" || page === "auth" || page === "adminAuth")) {
+    clearEduRouteHash();
+  }
   render();
 }
 
@@ -1548,6 +1663,7 @@ function logout() {
     quizTimerTicker = null;
   }
   clearSession();
+  clearEduRouteHash();
   state.isLoggedIn = false;
   state.authToken = "";
   state.authRole = "student";
@@ -2085,6 +2201,7 @@ function setCourseSort(value) {
 function openCourseResources(courseName) {
   setCourse(courseName);
   state.courseTab = "Material";
+  if (state.isLoggedIn) persistSession();
   addNotification("Course Resources", `Opened resources for ${courseName}.`);
   pushToast("info", `Viewing ${courseName} materials.`);
   render();
@@ -4310,6 +4427,7 @@ function bindGlobalOutsideClickHandlers() {
 async function bootstrapApp() {
   loadSessionFromStorage();
   loadAdminStudioDrafts();
+  if (state.isLoggedIn) syncEduHashFromState();
   render();
   if (state.isLoggedIn && state.authRole === "admin") {
     await refreshAdminPageData();
