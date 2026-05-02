@@ -4,7 +4,7 @@ import time
 from datetime import datetime
 from decimal import Decimal
 
-from flask import Blueprint, g, request
+from flask import Blueprint, Response, current_app, g, request, send_from_directory
 from sqlalchemy.exc import IntegrityError
 
 from ..auth import require_auth
@@ -38,6 +38,20 @@ def _is_admin_user():
 def _enrolled_course_ids(user_id: int):
     rows = db.session.query(Enrollment.course_id).filter(Enrollment.user_id == user_id).all()
     return {int(cid) for (cid,) in rows}
+
+
+def _uploads_disk_basename(file_path: str):
+    p = (file_path or "").strip()
+    if "/api/uploads/" not in p:
+        return None
+    tail = p.split("/api/uploads/", 1)[-1]
+    if not tail or ".." in tail or "/" in tail:
+        return None
+    return tail
+
+
+def _safe_download_filename(name: str) -> str:
+    return (name or "download").replace('"', "'")[:200]
 
 
 def _batch_forum_replies(post_ids: list):
@@ -389,7 +403,13 @@ def list_announcements():
 @require_auth()
 def list_materials():
     now = datetime.utcnow()
-    rows = Material.query.filter(db.or_(Material.publish_at.is_(None), Material.publish_at <= now)).order_by(Material.created_at.desc()).all()
+    eids = None if _is_admin_user() else _enrolled_course_ids(g.current_user.id)
+    if eids is not None and not eids:
+        return {"items": []}
+    mq = Material.query.filter(db.or_(Material.publish_at.is_(None), Material.publish_at <= now))
+    if eids is not None:
+        mq = mq.filter(Material.course_id.in_(eids))
+    rows = mq.order_by(Material.created_at.desc()).all()
     return {
         "items": [
             {
@@ -403,6 +423,61 @@ def list_materials():
             for row in rows
         ]
     }
+
+
+@student_bp.get("/materials/<int:material_id>/file")
+@require_auth()
+def download_material_file(material_id):
+    row = Material.query.get(material_id)
+    if not row:
+        return {"message": "Not found"}, 404
+    if not _is_admin_user() and row.course_id not in _enrolled_course_ids(g.current_user.id):
+        return {"message": "Forbidden"}, 403
+    now = datetime.utcnow()
+    if row.publish_at and row.publish_at > now:
+        return {"message": "Not yet available"}, 403
+    blob = row.file_blob
+    if blob:
+        return Response(
+            blob,
+            mimetype=row.file_mime or "application/octet-stream",
+            headers={"Content-Disposition": f'inline; filename="{_safe_download_filename(row.name)}"'},
+        )
+    disk_name = _uploads_disk_basename(row.file_path or "")
+    if disk_name:
+        folder = current_app.config["UPLOAD_FOLDER"]
+        abs_path = os.path.join(folder, disk_name)
+        if os.path.isfile(abs_path):
+            return send_from_directory(folder, disk_name)
+    return {"message": "File unavailable"}, 404
+
+
+@student_bp.get("/assignments/<int:assignment_id>/attachment")
+@require_auth()
+def download_assignment_attachment(assignment_id):
+    row = Assignment.query.get(assignment_id)
+    if not row:
+        return {"message": "Not found"}, 404
+    if not _is_admin_user() and row.course_id not in _enrolled_course_ids(g.current_user.id):
+        return {"message": "Forbidden"}, 403
+    now = datetime.utcnow()
+    if row.publish_at and row.publish_at > now:
+        return {"message": "Not yet available"}, 403
+    blob = row.attachment_blob
+    if blob:
+        name = f"{row.title or 'assignment'}-attachment"
+        return Response(
+            blob,
+            mimetype=row.attachment_mime or "application/octet-stream",
+            headers={"Content-Disposition": f'inline; filename="{_safe_download_filename(name)}"'},
+        )
+    disk_name = _uploads_disk_basename(row.attachment_path or "")
+    if disk_name:
+        folder = current_app.config["UPLOAD_FOLDER"]
+        abs_path = os.path.join(folder, disk_name)
+        if os.path.isfile(abs_path):
+            return send_from_directory(folder, disk_name)
+    return {"message": "File unavailable"}, 404
 
 
 @student_bp.get("/comments")

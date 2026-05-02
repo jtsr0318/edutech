@@ -169,10 +169,6 @@ def create_material(course_id):
         return {"message": "file is required"}, 400
     safe_name = secure_filename(upload.filename or "upload.file")
     ext = (safe_name.split(".")[-1] if "." in safe_name else "FILE").upper()
-    stored_name = f"{uuid.uuid4().hex}_{safe_name}"
-    abs_path = os.path.join(current_app.config["UPLOAD_FOLDER"], stored_name)
-    upload.save(abs_path)
-    file_path = f"/api/uploads/{stored_name}"
     if not name:
         name = safe_name
     file_type = ext
@@ -181,10 +177,25 @@ def create_material(course_id):
         publish_at = parse_iso_datetime(request.form.get("publishAt") or "")
     except Exception:
         return {"message": "Invalid publishAt datetime"}, 400
-    row = Material(course_id=course_id, name=name, type=file_type, file_path=file_path, publish_at=publish_at)
+    max_bytes = int(current_app.config.get("MAX_UPLOAD_BYTES", 32 * 1024 * 1024))
+    raw = upload.read()
+    if len(raw) > max_bytes:
+        return {"message": f"File too large (max {max_bytes // (1024 * 1024)} MB)."}, 400
+    mime = upload.mimetype or "application/octet-stream"
+    row = Material(
+        course_id=course_id,
+        name=name,
+        type=file_type,
+        file_path="__pending__",
+        publish_at=publish_at,
+        file_blob=raw,
+        file_mime=mime,
+    )
     db.session.add(row)
+    db.session.flush()
+    row.file_path = f"/api/materials/{row.id}/file"
     db.session.commit()
-    return {"status": "success", "item": {"id": row.id, "filePath": file_path}}
+    return {"status": "success", "item": {"id": row.id, "filePath": row.file_path}}
 
 
 @admin_bp.post("/admin/uploads/image")
@@ -230,6 +241,8 @@ def create_assignment(course_id):
         return {"message": "Course not found"}, 404
 
     attachment_path = None
+    attachment_blob = None
+    attachment_mime = None
     title = ""
     ass_type = "short"
     due_at_raw = ""
@@ -257,11 +270,12 @@ def create_assignment(course_id):
             return {"message": "Invalid publishAt datetime"}, 400
         upload = request.files.get("attachment")
         if upload and upload.filename:
-            safe_name = secure_filename(upload.filename or "attachment")
-            stored_name = f"{uuid.uuid4().hex}_{safe_name}"
-            abs_path = os.path.join(current_app.config["UPLOAD_FOLDER"], stored_name)
-            upload.save(abs_path)
-            attachment_path = f"/api/uploads/{stored_name}"
+            max_bytes = int(current_app.config.get("MAX_UPLOAD_BYTES", 32 * 1024 * 1024))
+            raw = upload.read()
+            if len(raw) > max_bytes:
+                return {"message": f"Attachment too large (max {max_bytes // (1024 * 1024)} MB)."}, 400
+            attachment_blob = raw
+            attachment_mime = upload.mimetype or "application/octet-stream"
     else:
         body = request.get_json(silent=True) or {}
         title = (body.get("title") or "").strip()
@@ -302,10 +316,15 @@ def create_assignment(course_id):
         quiz_payload=quiz_text or None,
         timer_seconds=timer_seconds,
         attachment_path=attachment_path,
+        attachment_blob=attachment_blob,
+        attachment_mime=attachment_mime,
     )
     db.session.add(row)
+    db.session.flush()
+    if attachment_blob:
+        row.attachment_path = f"/api/assignments/{row.id}/attachment"
     db.session.commit()
-    return {"status": "success", "item": {"id": row.id, "attachmentPath": attachment_path or ""}}
+    return {"status": "success", "item": {"id": row.id, "attachmentPath": row.attachment_path or ""}}
 
 
 @admin_bp.post("/admin/comments")

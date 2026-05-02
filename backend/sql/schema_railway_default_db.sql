@@ -45,6 +45,8 @@ CREATE TABLE IF NOT EXISTS assignments (
   quiz_payload LONGTEXT NULL,
   timer_seconds INT NULL,
   attachment_path VARCHAR(512) NULL,
+  attachment_mime VARCHAR(128) NULL,
+  attachment_blob LONGBLOB NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_assignment_course FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
 );
@@ -65,6 +67,8 @@ CREATE TABLE IF NOT EXISTS materials (
   name VARCHAR(255) NOT NULL,
   type VARCHAR(20) NOT NULL DEFAULT 'FILE',
   file_path VARCHAR(255) NOT NULL,
+  file_mime VARCHAR(128) NULL,
+  file_blob LONGBLOB NULL,
   publish_at DATETIME NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_material_course FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE

@@ -180,6 +180,76 @@ function resolvePublicApiUrl(path) {
   return p;
 }
 
+async function fetchAuthorizedBinary(apiPath) {
+  const res = await fetch(`${API_BASE_URL}${apiPath}`, {
+    headers: state.authToken ? { Authorization: `Bearer ${state.authToken}` } : {},
+  });
+  if (!res.ok) {
+    let msg = `Request failed (${res.status})`;
+    try {
+      const j = await res.json();
+      if (j.message) msg = j.message;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(msg);
+  }
+  return res.blob();
+}
+
+async function openMaterialFromApi(materialId) {
+  try {
+    const blob = await fetchAuthorizedBinary(`/materials/${encodeURIComponent(materialId)}/file`);
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank", "noopener,noreferrer");
+    setTimeout(() => URL.revokeObjectURL(url), 180000);
+  } catch (err) {
+    pushToast("error", err.message || "Could not open file.");
+  }
+}
+
+async function downloadMaterialFromApi(materialId) {
+  try {
+    const blob = await fetchAuthorizedBinary(`/materials/${encodeURIComponent(materialId)}/file`);
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `material-${materialId}`;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+  } catch (err) {
+    pushToast("error", err.message || "Download failed.");
+  }
+}
+
+async function openAssignmentAttachment(assignmentId) {
+  try {
+    const blob = await fetchAuthorizedBinary(`/assignments/${encodeURIComponent(assignmentId)}/attachment`);
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank", "noopener,noreferrer");
+    setTimeout(() => URL.revokeObjectURL(url), 180000);
+  } catch (err) {
+    pushToast("error", err.message || "Could not open attachment.");
+  }
+}
+
+function materialFileActionsHtml(m) {
+  const fp = m.filePath || "";
+  if (fp.startsWith("/api/materials/")) {
+    return `<div class="material-file-actions">
+      <button type="button" class="button button-primary" onclick="openMaterialFromApi('${m.id}')">Open File</button>
+      <button type="button" class="button button-secondary" onclick="downloadMaterialFromApi('${m.id}')">Download</button>
+    </div>`;
+  }
+  const href = escapeHtml(resolvePublicApiUrl(fp || "#"));
+  return `<div class="material-file-actions">
+      <a class="button button-primary" href="${href}" target="_blank" rel="noopener noreferrer">Open File</a>
+      <a class="button button-secondary" href="${href}" download>Download</a>
+    </div>`;
+}
+
 let forumSearchTerm = state.forumSearch;
 let courseSearchTerm = state.courseSearch;
 let filterState = {
@@ -2786,7 +2856,11 @@ function adminPageContent() {
                               <strong>Uploaded Materials</strong>
                               ${courseMaterials
                                 .map(
-                                  (m) => `<div class="item"><div class="split"><span>${m.name}</span><small>${m.type}</small></div><div class="button-row"><a class="button button-secondary" href="${escapeHtml(resolvePublicApiUrl(m.filePath || m.url || "#"))}" target="_blank" rel="noopener noreferrer">Open</a><button class="button button-secondary" onclick="deleteAdminMaterial('${m.id}')">Delete</button></div></div>`
+                                  (m) => `<div class="item"><div class="split"><span>${m.name}</span><small>${m.type}</small></div><div class="button-row">${
+                                    (m.filePath || "").startsWith("/api/materials/")
+                                      ? `<button type="button" class="button button-secondary" onclick="openMaterialFromApi('${m.id}')">Open</button>`
+                                      : `<a class="button button-secondary" href="${escapeHtml(resolvePublicApiUrl(m.filePath || m.url || "#"))}" target="_blank" rel="noopener noreferrer">Open</a>`
+                                  }<button class="button button-secondary" onclick="deleteAdminMaterial('${m.id}')">Delete</button></div></div>`
                                 )
                                 .join("") || `<p class="muted">No materials uploaded yet.</p>`}
                             </article>
@@ -3406,7 +3480,9 @@ function renderAssignmentBody(assignment) {
   const attPath = assignment.attachmentPath || assignment.attachment_path;
   const attHref = resolvePublicApiUrl(attPath);
   const teacherAttachment = attPath
-    ? `<div class="card"><h4>Teacher file</h4><p><a class="button button-secondary" href="${escapeHtml(attHref)}" target="_blank" rel="noopener noreferrer">Download attachment</a></p></div>`
+    ? attPath.startsWith("/api/assignments/")
+      ? `<div class="card"><h4>Teacher file</h4><p><button type="button" class="button button-secondary" onclick="openAssignmentAttachment('${assignment.id}')">Open / download in new tab</button></p></div>`
+      : `<div class="card"><h4>Teacher file</h4><p><a class="button button-secondary" href="${escapeHtml(attHref)}" target="_blank" rel="noopener noreferrer">Download attachment</a></p></div>`
     : "";
   const rubricBlock = assignment.rubricTemplate
     ? `<div class="card"><h4>Rubric</h4><p class="muted">${assignment.rubricTemplate}</p></div>`
@@ -3643,10 +3719,7 @@ function renderCourseTabContent() {
                     <p class="muted">Please review this file before next class.</p>
                   </div>
                 </div>
-                <div class="material-file-actions">
-                  <a class="button button-primary" href="${escapeHtml(resolvePublicApiUrl(m.filePath || "#"))}" target="_blank" rel="noopener noreferrer">Open File</a>
-                  <a class="button button-secondary" href="${escapeHtml(resolvePublicApiUrl(m.filePath || "#"))}" download>Download</a>
-                </div>
+                ${materialFileActionsHtml(m)}
                 ${commentsBlock(`${m.id}-material-comments`, "material", m.id)}
               </div>
             </article>

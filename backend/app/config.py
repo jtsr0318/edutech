@@ -113,3 +113,5 @@ class Config:
         "connect_args": {"connect_timeout": int(os.getenv("MYSQL_CONNECT_TIMEOUT", "15"))},
     }
     UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER", str((Path(__file__).resolve().parent.parent / "uploads")))
+    # Materials / assignment attachments stored in DB above this size are rejected (admin upload).
+    MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(32 * 1024 * 1024)))
