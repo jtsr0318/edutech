@@ -1,5 +1,7 @@
 from datetime import datetime
 
+from sqlalchemy.orm import deferred
+
 from .extensions import db
 
 
@@ -54,7 +56,7 @@ class Assignment(db.Model):
     timer_seconds = db.Column(db.Integer, nullable=True)
     attachment_path = db.Column(db.String(512), nullable=True)
     attachment_mime = db.Column(db.String(128), nullable=True)
-    attachment_blob = db.Column(db.LargeBinary, nullable=True, deferred=True)
+    attachment_blob = deferred(db.Column(db.LargeBinary, nullable=True))
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
 
@@ -78,7 +80,7 @@ class Material(db.Model):
     type = db.Column(db.String(20), nullable=False, default="FILE")
     file_path = db.Column(db.String(255), nullable=False)
     file_mime = db.Column(db.String(128), nullable=True)
-    file_blob = db.Column(db.LargeBinary, nullable=True, deferred=True)
+    file_blob = deferred(db.Column(db.LargeBinary, nullable=True))
     publish_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
