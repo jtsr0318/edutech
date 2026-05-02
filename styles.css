@@ -2485,3 +2485,73 @@ textarea {
     transition: none !important;
   }
 }
+
+.courses-join-card {
+  margin-bottom: 1rem;
+}
+
+.courses-join-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+
+.courses-join-input {
+  flex: 1 1 200px;
+  min-width: 160px;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+}
+
+.admin-book-row-main {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.admin-book-thumb {
+  width: 56px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+.admin-book-thumb-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--section-soft);
+  font-size: 1.25rem;
+}
+
+.forum-admin-replies {
+  margin-top: 0.5rem;
+  padding-left: 0.5rem;
+  border-left: 3px solid var(--line);
+}
+
+.forum-admin-reply {
+  margin-bottom: 0.75rem;
+}
+
+.forum-thread-replies {
+  margin-top: 1rem;
+}
+
+.forum-thread-reply {
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.forum-thread-reply-admin {
+  background: var(--primary-soft);
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-md);
+  border-top: none;
+  margin-top: 0.35rem;
+}

@@ -9,10 +9,53 @@ from sqlalchemy.exc import IntegrityError
 
 from ..auth import require_auth
 from ..extensions import db
-from ..models import Announcement, Assignment, Book, CartItem, ContentComment, Course, Enrollment, ForumPost, Material, Order, QuizAttempt, SavedAnnouncement, Submission, User
+from ..models import (
+    Announcement,
+    Assignment,
+    Book,
+    CartItem,
+    ContentComment,
+    Course,
+    Enrollment,
+    ForumPost,
+    ForumReply,
+    Material,
+    Order,
+    QuizAttempt,
+    SavedAnnouncement,
+    Submission,
+    User,
+)
 
 student_bp = Blueprint("student", __name__)
 LOG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "debug-46886c.log")
+
+
+def _is_admin_user():
+    return getattr(g.current_user, "role", None) == "admin"
+
+
+def _enrolled_course_ids(user_id: int):
+    rows = db.session.query(Enrollment.course_id).filter(Enrollment.user_id == user_id).all()
+    return {int(cid) for (cid,) in rows}
+
+
+def _batch_forum_replies(post_ids: list):
+    if not post_ids:
+        return {}
+    out = {pid: [] for pid in post_ids}
+    rows = ForumReply.query.filter(ForumReply.post_id.in_(post_ids)).order_by(ForumReply.created_at.asc()).all()
+    for r in rows:
+        out.setdefault(r.post_id, []).append(
+            {
+                "id": r.id,
+                "authorRole": r.author_role,
+                "authorName": r.author_name,
+                "text": r.text,
+                "createdAt": r.created_at.isoformat(),
+            }
+        )
+    return out
 
 
 def _agent_log(run_id: str, hypothesis_id: str, location: str, message: str, data: dict):
@@ -180,7 +223,13 @@ def checkout():
 @student_bp.get("/courses")
 @require_auth()
 def list_courses():
-    rows = Course.query.order_by(Course.created_at.desc()).all()
+    if _is_admin_user():
+        rows = Course.query.order_by(Course.created_at.desc()).all()
+    else:
+        ids = _enrolled_course_ids(g.current_user.id)
+        if not ids:
+            return {"items": []}
+        rows = Course.query.filter(Course.id.in_(ids)).order_by(Course.created_at.desc()).all()
     return {
         "items": [
             {
@@ -195,40 +244,56 @@ def list_courses():
     }
 
 
-@student_bp.post("/courses/<int:course_id>/enroll")
+@student_bp.post("/courses/join")
 @require_auth()
-def enroll_course(course_id):
-    # #region agent log
+def join_course_by_code():
+    if _is_admin_user():
+        return {"message": "Use the admin panel to manage courses."}, 400
+    body = request.get_json(silent=True) or {}
+    raw = (body.get("joinCode") or body.get("code") or "").strip().upper().replace(" ", "")
+    if not raw:
+        return {"message": "joinCode is required"}, 400
+    course = Course.query.filter_by(join_code=raw).first()
+    if not course:
+        return {"message": "Invalid course code."}, 404
+    return _enroll_current_user_in_course(course.id)
+
+
+def _enroll_current_user_in_course(course_id: int):
     _agent_log("post-fix", "H12", "student.py:enroll:entry", "enroll request", {"courseId": int(course_id), "userId": int(g.current_user.id)})
-    # #endregion
     course = Course.query.get(course_id)
     if not course:
-        return {"message": "Course not found."}, 404
+        return ({"message": "Course not found."}, 404)
     existing = Enrollment.query.filter_by(user_id=g.current_user.id, course_id=course_id).first()
     if not existing:
         db.session.add(Enrollment(user_id=g.current_user.id, course_id=course_id))
         try:
             db.session.commit()
-            # #region agent log
             _agent_log("post-fix", "H12", "student.py:enroll:inserted", "enrollment inserted", {"courseId": int(course_id), "userId": int(g.current_user.id)})
-            # #endregion
         except IntegrityError:
             db.session.rollback()
-            # #region agent log
             _agent_log("post-fix", "H12", "student.py:enroll:duplicate", "duplicate enrollment ignored", {"courseId": int(course_id), "userId": int(g.current_user.id)})
-            # #endregion
     else:
-        # #region agent log
         _agent_log("post-fix", "H12", "student.py:enroll:exists", "already enrolled", {"courseId": int(course_id), "userId": int(g.current_user.id)})
-        # #endregion
-    return {"status": "success", "courseId": course_id}
+    return {"status": "success", "courseId": course_id}, 200
+
+
+@student_bp.post("/courses/<int:course_id>/enroll")
+@require_auth()
+def enroll_course(course_id):
+    if not _is_admin_user():
+        return {"message": "Join a class using a join code from My Courses."}, 403
+    return _enroll_current_user_in_course(course_id)
 
 
 @student_bp.get("/assignments")
 @require_auth()
 def list_assignments():
     now = datetime.utcnow()
-    rows = (
+    eids = None if _is_admin_user() else _enrolled_course_ids(g.current_user.id)
+    if eids is not None and not eids:
+        return {"items": []}
+    q = (
         db.session.query(Assignment, Course, Submission)
         .join(Course, Assignment.course_id == Course.id)
         .outerjoin(
@@ -236,9 +301,10 @@ def list_assignments():
             db.and_(Submission.assignment_id == Assignment.id, Submission.user_id == g.current_user.id),
         )
         .filter(db.or_(Assignment.publish_at.is_(None), Assignment.publish_at <= now))
-        .order_by(Assignment.created_at.asc())
-        .all()
     )
+    if eids is not None:
+        q = q.filter(Assignment.course_id.in_(eids))
+    rows = q.order_by(Assignment.created_at.asc()).all()
     attempts = (
         QuizAttempt.query.filter_by(user_id=g.current_user.id)
         .order_by(QuizAttempt.created_at.desc())
@@ -281,6 +347,7 @@ def list_assignments():
                     if submission
                     else None
                 ),
+                "attachmentPath": row.attachment_path or "",
             }
             for row, course, submission in rows
         ]
@@ -291,13 +358,17 @@ def list_assignments():
 @require_auth()
 def list_announcements():
     now = datetime.utcnow()
-    rows = (
+    eids = None if _is_admin_user() else _enrolled_course_ids(g.current_user.id)
+    if eids is not None and not eids:
+        return {"items": []}
+    q = (
         db.session.query(Announcement, Course)
         .join(Course, Announcement.course_id == Course.id)
         .filter(db.or_(Announcement.publish_at.is_(None), Announcement.publish_at <= now))
-        .order_by(Announcement.created_at.desc())
-        .all()
     )
+    if eids is not None:
+        q = q.filter(Announcement.course_id.in_(eids))
+    rows = q.order_by(Announcement.created_at.desc()).all()
     return {
         "items": [
             {
@@ -337,7 +408,13 @@ def list_materials():
 @student_bp.get("/comments")
 @require_auth()
 def list_comments():
-    rows = ContentComment.query.order_by(ContentComment.created_at.asc()).all()
+    cq = ContentComment.query
+    if not _is_admin_user():
+        eids = _enrolled_course_ids(g.current_user.id)
+        if not eids:
+            return {"items": []}
+        cq = cq.filter(ContentComment.course_id.in_(eids))
+    rows = cq.order_by(ContentComment.created_at.asc()).all()
     return {
         "items": [
             {
@@ -365,6 +442,10 @@ def create_comment():
     text = (body.get("text") or "").strip()
     if not course_id or not content_id or content_type not in {"announcement", "material", "assignment"} or not text:
         return {"message": "courseId, contentType, contentId and text are required."}, 400
+    if not _is_admin_user():
+        cid = int(course_id)
+        if cid not in _enrolled_course_ids(g.current_user.id):
+            return {"message": "Not enrolled in this course."}, 403
     row = ContentComment(
         course_id=int(course_id),
         content_type=content_type,
@@ -385,6 +466,8 @@ def submit_assignment(assignment_id):
     assignment = Assignment.query.get(assignment_id)
     if not assignment:
         return {"message": "Assignment not found."}, 404
+    if not _is_admin_user() and assignment.course_id not in _enrolled_course_ids(g.current_user.id):
+        return {"message": "Not enrolled in this course."}, 403
     submitted_at = datetime.utcnow()
     is_late = bool(assignment.due_at and submitted_at > assignment.due_at)
     status = "late" if is_late else "submitted"
@@ -423,6 +506,8 @@ def submit_quiz(assignment_id):
     assignment = Assignment.query.get(assignment_id)
     if not assignment:
         return {"message": "Assignment not found."}, 404
+    if not _is_admin_user() and assignment.course_id not in _enrolled_course_ids(g.current_user.id):
+        return {"message": "Not enrolled in this course."}, 403
     if assignment.type != "mcq":
         return {"message": "Quiz submission only supports mcq assignments."}, 400
     payload = json.loads(assignment.quiz_payload) if assignment.quiz_payload else {}
@@ -452,7 +537,8 @@ def submit_quiz(assignment_id):
 @require_auth()
 def list_forum_posts():
     rows = ForumPost.query.order_by(ForumPost.created_at.desc()).all()
-    return {"items": [_forum_payload(row) for row in rows]}
+    rmap = _batch_forum_replies([r.id for r in rows])
+    return {"items": [{**_forum_payload(row), "replyList": rmap.get(row.id, [])} for row in rows]}
 
 
 @student_bp.post("/forum/posts")
@@ -479,7 +565,7 @@ def create_forum_post():
     )
     db.session.add(row)
     db.session.commit()
-    return {"status": "success", "item": _forum_payload(row)}
+    return {"status": "success", "item": {**_forum_payload(row), "replyList": []}}
 
 
 @student_bp.post("/forum/posts/<int:post_id>/reply")
@@ -492,10 +578,20 @@ def reply_forum_post(post_id):
     row = ForumPost.query.get(post_id)
     if not row:
         return {"message": "Post not found"}, 404
-    row.replies = int(row.replies or 0) + 1
+    role = "admin" if _is_admin_user() else "student"
+    rep = ForumReply(
+        post_id=post_id,
+        author_role=role,
+        author_name=g.current_user.name or ("Admin" if role == "admin" else "Student"),
+        text=text,
+    )
+    db.session.add(rep)
     row.last_activity_text = "Just now"
+    db.session.flush()
+    row.replies = ForumReply.query.filter_by(post_id=post_id).count()
     db.session.commit()
-    return {"status": "success", "item": _forum_payload(row)}
+    rmap = _batch_forum_replies([post_id])
+    return {"status": "success", "item": {**_forum_payload(row), "replyList": rmap.get(post_id, [])}}
 
 
 @student_bp.get("/books")
@@ -584,6 +680,15 @@ def clear_cart_items():
 @student_bp.post("/announcements/<announcement_id>/save")
 @require_auth()
 def save_announcement(announcement_id):
+    try:
+        aid = int(announcement_id)
+    except (TypeError, ValueError):
+        return {"message": "Invalid announcement id"}, 400
+    ann = Announcement.query.get(aid)
+    if not ann:
+        return {"message": "Announcement not found"}, 404
+    if not _is_admin_user() and ann.course_id not in _enrolled_course_ids(g.current_user.id):
+        return {"message": "Not enrolled in this course."}, 403
     row = SavedAnnouncement.query.filter_by(user_id=g.current_user.id, announcement_id=str(announcement_id)).first()
     if not row:
         db.session.add(SavedAnnouncement(user_id=g.current_user.id, announcement_id=str(announcement_id)))
@@ -594,6 +699,13 @@ def save_announcement(announcement_id):
 @student_bp.delete("/announcements/<announcement_id>/save")
 @require_auth()
 def unsave_announcement(announcement_id):
+    try:
+        aid = int(announcement_id)
+    except (TypeError, ValueError):
+        return {"message": "Invalid announcement id"}, 400
+    ann = Announcement.query.get(aid)
+    if ann and not _is_admin_user() and ann.course_id not in _enrolled_course_ids(g.current_user.id):
+        return {"message": "Not enrolled in this course."}, 403
     row = SavedAnnouncement.query.filter_by(user_id=g.current_user.id, announcement_id=str(announcement_id)).first()
     if row:
         db.session.delete(row)

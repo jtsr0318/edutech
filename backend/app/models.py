@@ -26,6 +26,7 @@ class Course(db.Model):
     lecturer_name = db.Column(db.String(120), nullable=False, default="Lecturer")
     message = db.Column(db.String(180), nullable=False, default="Start by today!")
     icon = db.Column(db.String(255), nullable=True)
+    join_code = db.Column(db.String(32), nullable=True, unique=True, index=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
 
@@ -51,6 +52,7 @@ class Assignment(db.Model):
     rubric_template = db.Column(db.Text, nullable=True)
     quiz_payload = db.Column(db.Text, nullable=True)
     timer_seconds = db.Column(db.Integer, nullable=True)
+    attachment_path = db.Column(db.String(512), nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
 
@@ -145,6 +147,17 @@ class ForumPost(db.Model):
     replies = db.Column(db.Integer, nullable=False, default=0)
     image = db.Column(db.String(255), nullable=True)
     last_activity_text = db.Column(db.String(80), nullable=False, default="Just now")
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+
+class ForumReply(db.Model):
+    __tablename__ = "forum_replies"
+
+    id = db.Column(db.Integer, primary_key=True)
+    post_id = db.Column(db.Integer, db.ForeignKey("forum_posts.id", ondelete="CASCADE"), nullable=False, index=True)
+    author_role = db.Column(db.String(20), nullable=False, default="student")
+    author_name = db.Column(db.String(120), nullable=False)
+    text = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
 

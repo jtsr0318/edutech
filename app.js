@@ -23,6 +23,7 @@ const state = {
   adminChatDraft: "",
   adminCourseForm: { id: "", name: "", lecturerName: "" },
   adminStreamCourseId: "",
+  adminEnrollments: [],
   adminMaterialForm: { courseId: "", name: "", commentText: "", publishAt: "" },
   adminAnnouncementForm: { courseId: "", title: "", text: "", publishAt: "" },
   adminAssignmentForm: {
@@ -324,6 +325,10 @@ async function enrollCourse(courseId) {
   return apiRequest(`/courses/${courseId}/enroll`, { method: "POST" });
 }
 
+async function joinCourseByCodeApi(joinCode) {
+  return apiRequest("/courses/join", { method: "POST", body: { joinCode } });
+}
+
 async function fetchForumPosts() {
   return apiRequest("/forum/posts");
 }
@@ -484,10 +489,9 @@ async function setCourse(courseName) {
   const course = data.courses.find((c) => c.name === courseName);
   if (course?.id && state.isLoggedIn) {
     try {
-      await enrollCourse(course.id);
       await refreshCourseProgress();
     } catch (err) {
-      pushToast("error", err.message || "Failed to enroll course.");
+      pushToast("error", err.message || "Failed to refresh course progress.");
     }
   }
   render();
@@ -663,6 +667,15 @@ function setAdminStudioTab(tab) {
   render();
 }
 
+async function adminFetchEnrollments(courseId) {
+  if (!courseId) {
+    state.adminEnrollments = [];
+    return;
+  }
+  const payload = await apiRequest(`/admin/courses/${encodeURIComponent(courseId)}/enrollments`);
+  state.adminEnrollments = payload.items || [];
+}
+
 function setAdminStreamCourse(courseId) {
   const target = String(courseId || "");
   const normalized = String(state.adminStreamCourseId || "") === target ? "" : target;
@@ -672,7 +685,19 @@ function setAdminStreamCourse(courseId) {
   state.adminAssignmentForm.courseId = normalized;
   state.adminCommentForm.courseId = normalized;
   state.adminCommentForm.contentId = "";
+  if (!normalized) {
+    state.adminEnrollments = [];
+  }
   render();
+  if (normalized) {
+    adminFetchEnrollments(normalized)
+      .then(() => render())
+      .catch((err) => {
+        state.adminEnrollments = [];
+        pushToast("error", err.message || "Failed to load enrollments.");
+        render();
+      });
+  }
 }
 
 function editAdminCourse(courseId) {
@@ -689,6 +714,13 @@ function editAdminCourse(courseId) {
   state.adminAssignmentForm.courseId = String(course.id || "");
   state.adminCommentForm.courseId = String(course.id || "");
   render();
+  adminFetchEnrollments(String(course.id || ""))
+    .then(() => render())
+    .catch((err) => {
+      state.adminEnrollments = [];
+      pushToast("error", err.message || "Failed to load enrollments.");
+      render();
+    });
 }
 
 async function saveAdminCourse() {
@@ -861,7 +893,26 @@ async function saveAdminAssignment() {
       pushToast("error", "Course and assignment title are required.");
       return;
     }
-    const createRes = await apiRequest(`/admin/courses/${courseId}/assignments`, { method: "POST", body: payload });
+    const fileInput = document.getElementById("admin-assignment-attachment");
+    const file = fileInput && fileInput.files && fileInput.files[0];
+    let createRes;
+    if (file) {
+      const fd = new FormData();
+      fd.append("title", payload.title);
+      fd.append("type", payload.type);
+      fd.append("dueAt", payload.dueAt);
+      fd.append("publishAt", payload.publishAt);
+      fd.append("rubricTemplate", payload.rubricTemplate);
+      fd.append("timerSeconds", String(payload.timerSeconds));
+      if (payload.quizPayload) {
+        fd.append("quizPayload", JSON.stringify(payload.quizPayload));
+      }
+      fd.append("attachment", file, file.name);
+      createRes = await apiRequest(`/admin/courses/${courseId}/assignments`, { method: "POST", body: fd });
+    } else {
+      createRes = await apiRequest(`/admin/courses/${courseId}/assignments`, { method: "POST", body: payload });
+    }
+    if (fileInput) fileInput.value = "";
     const inlineComment = String(state.adminAssignmentForm.commentText || "").trim();
     if (inlineComment && createRes?.item?.id) {
       await apiRequest("/admin/comments", {
@@ -1185,6 +1236,67 @@ async function deleteAdminForumPost(id) {
     await refreshAdminPageData();
   } catch (err) {
     pushToast("error", err.message || "Failed to delete forum post.");
+  }
+}
+
+async function deleteAdminForumReply(replyId) {
+  try {
+    await apiRequest(`/admin/forum-replies/${encodeURIComponent(replyId)}`, { method: "DELETE" });
+    pushToast("success", "Reply removed.");
+    await adminFetchForumPosts();
+    render();
+  } catch (err) {
+    pushToast("error", err.message || "Failed to delete reply.");
+  }
+}
+
+async function submitAdminForumReplyFromCard(postId) {
+  const card = document.querySelector(`.admin-forum-post[data-post-id="${String(postId)}"]`);
+  const ta = card && card.querySelector("textarea.admin-forum-reply-input");
+  const text = (ta && ta.value ? ta.value : "").trim();
+  if (!text) {
+    pushToast("error", "Write a reply first.");
+    return;
+  }
+  try {
+    await apiRequest(`/admin/forum-posts/${encodeURIComponent(postId)}/replies`, { method: "POST", body: { message: text } });
+    if (ta) ta.value = "";
+    await adminFetchForumPosts();
+    pushToast("success", "Reply posted.");
+    render();
+  } catch (err) {
+    pushToast("error", err.message || "Failed to post reply.");
+  }
+}
+
+async function submitJoinCourseByCode() {
+  const el = document.getElementById("join-course-code-input");
+  const raw = (el && el.value ? el.value : "").trim();
+  if (!raw) {
+    pushToast("error", "Enter a join code.");
+    return;
+  }
+  const code = raw.toUpperCase().replace(/\s+/g, "");
+  try {
+    await joinCourseByCodeApi(code);
+    if (el) el.value = "";
+    await loadDataDrivenCollections();
+    await refreshCourseProgress();
+    pushToast("success", "You have joined the course.");
+    render();
+  } catch (err) {
+    pushToast("error", err.message || "Could not join this course.");
+  }
+}
+
+async function copyJoinCodeToClipboard(code) {
+  const c = String(code || "").trim();
+  if (!c) return;
+  try {
+    await navigator.clipboard.writeText(c);
+    pushToast("success", "Join code copied.");
+  } catch {
+    pushToast("error", "Unable to copy to clipboard.");
   }
 }
 
@@ -2193,6 +2305,15 @@ function ringProgress(value) {
   `;
 }
 
+function getEnrolledCourseIdSet() {
+  return new Set((data.courses || []).map((c) => String(c.id)));
+}
+
+function assignmentsForCurrentStudent() {
+  const ids = getEnrolledCourseIdSet();
+  return (data.assignments || []).filter((a) => ids.has(String(a.courseId)));
+}
+
 function getEffectiveCourses() {
   return data.courses.map((course) => {
     const courseId = String(course.id || course.name);
@@ -2461,7 +2582,11 @@ function adminPageContent() {
           ${(data.materials || []).length
             ? data.materials
                 .slice(0, 6)
-                .map((m) => `<div class="item"><strong>${m.name}</strong><p class="muted">${m.type} · Course ${m.courseId}</p></div>`)
+                .map((m) => {
+                  const cn =
+                    (data.courses || []).find((c) => String(c.id) === String(m.courseId))?.name || `Course ${m.courseId}`;
+                  return `<div class="item"><strong>${m.name}</strong><p class="muted">${m.type} · ${escapeHtml(cn)}</p></div>`;
+                })
                 .join("")
             : `<p class="muted">No uploaded materials yet.</p>`}
         </article>
@@ -2517,8 +2642,14 @@ function adminPageContent() {
               <article class="card admin-surface admin-subject-card ${isOpen ? "admin-subject-card-open" : ""}">
                 <div class="split">
                   <div>
-                    <h3>${c.name}</h3>
-                    <p class="muted">Lecturer: ${c.lecturerName || "Lecturer"}</p>
+                    <h3>${escapeHtml(c.name || "")}</h3>
+                    <p class="muted">Lecturer: ${escapeHtml(c.lecturerName || "Lecturer")}</p>
+                    ${
+                      c.joinCode
+                        ? `<p class="muted">Join code: <strong>${escapeHtml(c.joinCode)}</strong>
+                        <button type="button" class="button button-secondary compact-btn" onclick="copyJoinCodeToClipboard('${String(c.joinCode).replace(/'/g, "\\'")}')">Copy</button></p>`
+                        : ""
+                    }
                   </div>
                   <div class="button-row">
                     <button class="button button-secondary" onclick="setAdminStreamCourse('${c.id}')">${isOpen ? "Collapse" : "Open Subject"}</button>
@@ -2608,6 +2739,7 @@ function adminPageContent() {
                                              <div class="field" style="grid-column:1 / -1;"><label>Explanation (shown after submit)</label><textarea oninput="updateAdminAssignmentForm('quizExplanation', this.value)">${state.adminAssignmentForm.quizExplanation || ""}</textarea></div>`
                                           : ""
                                       }
+                                      <div class="field" style="grid-column:1 / -1;"><label>Attachment (PDF / DOCX / PPT… optional)</label><input id="admin-assignment-attachment" type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.zip,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" /></div>
                                       <div class="field" style="grid-column:1 / -1;"><label>Comment for this Assignment (optional)</label><textarea placeholder="Explain submission requirement or rubric..." oninput="updateAdminAssignmentForm('commentText', this.value)">${state.adminAssignmentForm.commentText || ""}</textarea></div>
                                     </div>
                                     <div class="button-row"><button class="button button-primary" onclick="saveAdminAssignment()">Set Assignment</button></div>
@@ -2617,13 +2749,26 @@ function adminPageContent() {
                           </div>
                         </section>
                         <section class="card admin-stream-card admin-surface">
+                          <h4>Enrolled students (${(state.adminEnrollments || []).length})</h4>
+                          ${
+                            (state.adminEnrollments || []).length
+                              ? (state.adminEnrollments || [])
+                                  .map(
+                                    (u) =>
+                                      `<div class="item"><div class="split"><strong>${escapeHtml(u.name || "")}</strong><span class="pill">${escapeHtml(u.role || "user")}</span></div><p class="muted">${escapeHtml(u.email || "")}</p></div>`
+                                  )
+                                  .join("")
+                              : `<p class="muted">No enrollments yet. Students join with the course code.</p>`
+                          }
+                        </section>
+                        <section class="card admin-stream-card admin-surface">
                           <h4>Published Content for ${c.name}</h4>
                           <div class="grid-2">
                             <article class="card admin-surface">
                               <strong>Uploaded Materials</strong>
                               ${courseMaterials
                                 .map(
-                                  (m) => `<div class="item"><div class="split"><span>${m.name}</span><small>${m.type}</small></div><div class="button-row"><a class="button button-secondary" href="${m.url}" target="_blank" rel="noopener noreferrer">Open</a><button class="button button-secondary" onclick="deleteAdminMaterial('${m.id}')">Delete</button></div></div>`
+                                  (m) => `<div class="item"><div class="split"><span>${m.name}</span><small>${m.type}</small></div><div class="button-row"><a class="button button-secondary" href="${m.filePath || m.url || "#"}" target="_blank" rel="noopener noreferrer">Open</a><button class="button button-secondary" onclick="deleteAdminMaterial('${m.id}')">Delete</button></div></div>`
                                 )
                                 .join("") || `<p class="muted">No materials uploaded yet.</p>`}
                             </article>
@@ -2702,7 +2847,10 @@ function adminPageContent() {
           <div class="admin-book-list" id="admin-book-list">
             ${visibleBooks
               .map(
-                (b) => `<div class="item">
+                (b) => `<div class="item admin-book-row">
+                  <div class="admin-book-row-main">
+                    ${b.image ? `<img src="${escapeHtml(b.image)}" alt="" class="admin-book-thumb" />` : `<div class="admin-book-thumb admin-book-thumb-placeholder">📚</div>`}
+                    <div>
                   <div class="split">
                     <strong>${b.title}</strong>
                     <span class="pill">Stock ${b.stock ?? 0}</span>
@@ -2711,6 +2859,8 @@ function adminPageContent() {
                   <p class="muted">${b.description || "No description."}</p>
                   <p><strong>RM ${Number(b.price || 0).toFixed(2)}</strong></p>
                   <div class="button-row"><button class="button button-secondary" onclick="editAdminBook('${b.id}')">Edit</button><button class="button button-secondary" onclick="deleteAdminBook('${b.id}')">Delete</button></div>
+                    </div>
+                  </div>
                 </div>`
               )
               .join("") || `<p class="muted">No books found for this search.</p>`}
@@ -2731,9 +2881,34 @@ function adminPageContent() {
       <section class="card admin-surface">
         <h3>Manage Forum Posts</h3>
         ${(state.adminForumPosts || [])
-          .map(
-            (p) => `<div class="item"><strong>${p.title}</strong><p class="muted">${p.author || "Unknown"} · ${p.tag || "General"}</p><div class="button-row"><button class="button button-secondary" onclick="deleteAdminForumPost('${p.id}')">Delete</button></div></div>`
-          )
+          .map((p) => {
+            const replies = (p.replyList || [])
+              .map(
+                (r) => `<div class="forum-admin-reply">
+                  <div class="split">
+                    <strong>${r.authorRole === "admin" ? `<span class="pill pill-amber">Admin</span> ` : ""}${escapeHtml(r.authorName || "")}</strong>
+                    <button type="button" class="button button-secondary compact-btn" onclick="deleteAdminForumReply('${r.id}')">Delete reply</button>
+                  </div>
+                  <p>${escapeHtml(r.text || "")}</p>
+                  <small class="muted">${formatChatTime(r.createdAt)}</small>
+                </div>`
+              )
+              .join("");
+            return `<div class="item admin-forum-post" data-post-id="${p.id}">
+              <strong>${escapeHtml(p.title || "")}</strong>
+              <p class="muted">${escapeHtml(p.author || "Unknown")} · ${escapeHtml(p.tag || "General")}</p>
+              <p class="muted forum-admin-post-snippet">${escapeHtml(String(p.content || "").slice(0, 220))}${String(p.content || "").length > 220 ? "…" : ""}</p>
+              ${replies ? `<div class="forum-admin-replies">${replies}</div>` : ""}
+              <div class="field" style="margin-top:10px;">
+                <label>Admin reply</label>
+                <textarea class="admin-forum-reply-input" rows="2" placeholder="Official response visible to students…"></textarea>
+              </div>
+              <div class="button-row">
+                <button type="button" class="button button-primary" onclick="submitAdminForumReplyFromCard('${p.id}')">Post admin reply</button>
+                <button type="button" class="button button-secondary" onclick="deleteAdminForumPost('${p.id}')">Delete post</button>
+              </div>
+            </div>`;
+          })
           .join("")}
       </section>
     `;
@@ -2859,7 +3034,7 @@ function homeView() {
       </article>
       <article class="card stat-card">
         <div class="stat-label">Assignments</div>
-        <div class="stat-big">${data.assignments.length}</div>
+        <div class="stat-big">${assignmentsForCurrentStudent().length}</div>
       </article>
       <article class="card stat-card">
         <div class="stat-label">Unread Alerts</div>
@@ -3148,6 +3323,15 @@ function coursesView() {
         </div>
       </div>
 
+      <section class="card courses-join-card">
+        <h3>Join a course</h3>
+        <p class="muted">Ask your lecturer for the join code, then enter it here to add the class to My Courses.</p>
+        <div class="courses-join-row">
+          <input id="join-course-code-input" class="courses-join-input" type="text" placeholder="e.g. ABCD1234" autocomplete="off" />
+          <button type="button" class="button button-primary" onclick="submitJoinCourseByCode()">Join</button>
+        </div>
+      </section>
+
       <div id="courses-list-container" class="course-list courses-grid">
         ${courseCardsMarkup(sortedCourses)}
       </div>
@@ -3157,11 +3341,16 @@ function coursesView() {
 }
 
 function assignmentOverviewView() {
-  if (!data.assignments.length) {
+  const selectedCourseObj = data.courses.find((c) => c.name === state.selectedCourse);
+  const selectedCourseId = selectedCourseObj?.id != null ? String(selectedCourseObj.id) : null;
+  const courseAssignments = selectedCourseId
+    ? (data.assignments || []).filter((a) => String(a.courseId) === selectedCourseId)
+    : [];
+  if (!courseAssignments.length) {
     return `<article class="card course-tab-card"><p class="muted">No assignments yet. Admin has not uploaded any assignment for this course.</p></article>`;
   }
   return `
-    ${data.assignments
+    ${courseAssignments
       .map(
         (assignment) => {
           const submission = state.assignmentSubmissions[assignment.id];
@@ -3196,6 +3385,10 @@ function assignmentOverviewView() {
 
 function renderAssignmentBody(assignment) {
   const submission = state.assignmentSubmissions[assignment.id];
+  const attPath = assignment.attachmentPath || assignment.attachment_path;
+  const teacherAttachment = attPath
+    ? `<div class="card"><h4>Teacher file</h4><p><a class="button button-secondary" href="${attPath}" target="_blank" rel="noopener noreferrer">Download attachment</a></p></div>`
+    : "";
   const rubricBlock = assignment.rubricTemplate
     ? `<div class="card"><h4>Rubric</h4><p class="muted">${assignment.rubricTemplate}</p></div>`
     : "";
@@ -3251,6 +3444,7 @@ function renderAssignmentBody(assignment) {
           ? `<p class="muted"><strong>Latest score:</strong> ${latestAttempt.score}/${latestAttempt.total} · ${formatChatTime(latestAttempt.createdAt)}</p>`
           : ""
       }
+      ${teacherAttachment}
       ${rubricBlock}
       ${submissionReceipt}
       ${commentsBlock(`${assignment.id}-comments`, "assignment", assignment.id)}
@@ -3273,6 +3467,7 @@ function renderAssignmentBody(assignment) {
           <button class="button button-secondary" onclick="submitAssignment('${assignment.id}', 'Mark as Done')">Mark as Done</button>
         </div>
       </div>
+      ${teacherAttachment}
       ${rubricBlock}
       ${submissionReceipt}
       ${commentsBlock(`${assignment.id}-comments`, "assignment", assignment.id)}
@@ -3280,6 +3475,7 @@ function renderAssignmentBody(assignment) {
   }
 
   return `
+    ${teacherAttachment}
     <div class="assignment-instruction">
       <strong>Instructions</strong>
       <p class="muted">Write a short reflection and submit when complete.</p>
@@ -3448,6 +3644,11 @@ function courseView() {
   const courses = getEffectiveCourses();
   const activeCourse = courses.find((course) => course.name === state.selectedCourse);
   const activeCourseProgress = Number(activeCourse?.progress || 0);
+  const selectedCourseObj = data.courses.find((c) => c.name === state.selectedCourse);
+  const sid = selectedCourseObj?.id != null ? String(selectedCourseObj.id) : null;
+  const matCount = sid ? (data.materials || []).filter((m) => String(m.courseId) === sid).length : 0;
+  const assignCount = sid ? (data.assignments || []).filter((a) => String(a.courseId) === sid).length : 0;
+  const annCount = sid ? (data.announcements || []).filter((a) => String(a.courseId) === sid).length : 0;
   const tabs = ["Announcements", "Material", "Assignment"];
   return `
     <div class="page wide-page fixed-frame">
@@ -3479,9 +3680,9 @@ function courseView() {
         </div>
         <div class="course-detail-kpis">
           <div class="kpi-item"><span class="kpi-label">Course Progress</span><strong>${activeCourseProgress}%</strong></div>
-          <div class="kpi-item"><span class="kpi-label">Materials</span><strong>${data.materials.length}</strong></div>
-          <div class="kpi-item"><span class="kpi-label">Assignments</span><strong>${data.assignments.length}</strong></div>
-          <div class="kpi-item"><span class="kpi-label">Announcements</span><strong>${data.announcements.length}</strong></div>
+          <div class="kpi-item"><span class="kpi-label">Materials</span><strong>${matCount}</strong></div>
+          <div class="kpi-item"><span class="kpi-label">Assignments</span><strong>${assignCount}</strong></div>
+          <div class="kpi-item"><span class="kpi-label">Announcements</span><strong>${annCount}</strong></div>
         </div>
         <div class="course-detail-body">
           <aside class="course-detail-aside">
@@ -3562,6 +3763,17 @@ function forumView() {
                 <p class="muted">By ${activePost.author} · ${activePost.last} · ${activePost.likes} likes · ${activePost.replies} replies</p>
                 <p>${activePost.content || "No additional content."}</p>
                 ${activePost.image ? `<img src="${activePost.image}" alt="${activePost.title}" class="forum-preview-image" />` : ""}
+                <div class="forum-thread-replies">
+                  ${(activePost.replyList || [])
+                    .map(
+                      (r) => `<div class="forum-thread-reply ${r.authorRole === "admin" ? "forum-thread-reply-admin" : ""}">
+                    <strong>${r.authorRole === "admin" ? "[Admin] " : ""}${escapeHtml(r.authorName || "")}</strong>
+                    <p>${escapeHtml(r.text || "")}</p>
+                    <small class="muted">${formatChatTime(r.createdAt)}</small>
+                  </div>`
+                    )
+                    .join("") || `<p class="muted">No replies yet.</p>`}
+                </div>
               </div>`;
             })()
           : ""

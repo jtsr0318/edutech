@@ -1,17 +1,20 @@
 import os
 import json
+import secrets
 import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from flask import Blueprint, current_app, request
+from flask import Blueprint, current_app, g, request
 from werkzeug.utils import secure_filename
 
 from ..auth import require_auth
 from ..extensions import db
-from ..models import Announcement, Assignment, Book, ContentComment, Course, ForumPost, Material, User
+from ..models import Announcement, Assignment, Book, ContentComment, Course, Enrollment, ForumPost, ForumReply, Material, Order, User
 
 admin_bp = Blueprint("admin", __name__)
+
+_JOIN_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 
 def parse_iso_datetime(value):
@@ -21,11 +24,46 @@ def parse_iso_datetime(value):
     return datetime.fromisoformat(raw.replace("Z", "+00:00")).replace(tzinfo=None)
 
 
+def _generate_join_code():
+    for _ in range(120):
+        code = "".join(secrets.choice(_JOIN_CODE_ALPHABET) for _ in range(8))
+        if not Course.query.filter_by(join_code=code).first():
+            return code
+    return uuid.uuid4().hex[:8].upper()
+
+
+def _ensure_course_join_codes():
+    rows = Course.query.filter(db.or_(Course.join_code.is_(None), Course.join_code == "")).all()
+    if not rows:
+        return
+    for c in rows:
+        c.join_code = _generate_join_code()
+    db.session.commit()
+
+
+def _forum_replies_map(post_ids: list):
+    if not post_ids:
+        return {}
+    out = {pid: [] for pid in post_ids}
+    for r in ForumReply.query.filter(ForumReply.post_id.in_(post_ids)).order_by(ForumReply.created_at.asc()).all():
+        out.setdefault(r.post_id, []).append(
+            {
+                "id": r.id,
+                "authorRole": r.author_role,
+                "authorName": r.author_name,
+                "text": r.text,
+                "createdAt": r.created_at.isoformat(),
+            }
+        )
+    return out
+
+
 def _course_payload(course: Course):
     return {
         "id": course.id,
         "name": course.name,
         "lecturerName": course.lecturer_name or "Lecturer",
+        "joinCode": (course.join_code or "").strip(),
     }
 
 
@@ -47,17 +85,28 @@ def _book_payload(book: Book):
 @admin_bp.get("/admin/stats")
 @require_auth(role="admin")
 def stats():
+    total_users = User.query.count()
+    total_courses = Course.query.count()
+    total_books = Book.query.count()
+    total_orders = Order.query.count()
+    total_forum = ForumPost.query.count()
     return {
+        "totalUsers": total_users,
+        "totalCourses": total_courses,
+        "totalBooks": total_books,
+        "totalOrders": total_orders,
+        "totalForumPosts": total_forum,
         "users": User.query.filter_by(role="user").count(),
-        "courses": Course.query.count(),
-        "books": Book.query.count(),
-        "forumPosts": ForumPost.query.count(),
+        "courses": total_courses,
+        "books": total_books,
+        "forumPosts": total_forum,
     }
 
 
 @admin_bp.get("/admin/courses")
 @require_auth(role="admin")
 def courses():
+    _ensure_course_join_codes()
     rows = Course.query.order_by(Course.created_at.desc()).all()
     return {"items": [_course_payload(row) for row in rows]}
 
@@ -69,6 +118,7 @@ def create_course():
     row = Course(
         name=(body.get("name") or "").strip(),
         lecturer_name=(body.get("lecturerName") or "Lecturer").strip() or "Lecturer",
+        join_code=_generate_join_code(),
     )
     if not row.name:
         return {"message": "name is required"}, 400
@@ -89,6 +139,22 @@ def update_course(course_id):
     row.lecturer_name = lecturer_name.strip() or "Lecturer"
     db.session.commit()
     return {"status": "success", "item": _course_payload(row)}
+
+
+@admin_bp.get("/admin/courses/<int:course_id>/enrollments")
+@require_auth(role="admin")
+def list_course_enrollments(course_id):
+    course = Course.query.get(course_id)
+    if not course:
+        return {"message": "Course not found"}, 404
+    rows = (
+        db.session.query(User, Enrollment)
+        .join(Enrollment, User.id == Enrollment.user_id)
+        .filter(Enrollment.course_id == course_id)
+        .order_by(Enrollment.id.asc())
+        .all()
+    )
+    return {"items": [{"userId": u.id, "name": u.name, "email": u.email, "role": u.role} for u, _e in rows]}
 
 
 @admin_bp.post("/admin/courses/<int:course_id>/materials")
@@ -159,46 +225,87 @@ def create_announcement(course_id):
 @admin_bp.post("/admin/courses/<int:course_id>/assignments")
 @require_auth(role="admin")
 def create_assignment(course_id):
-    body = request.get_json(silent=True) or {}
     course = Course.query.get(course_id)
     if not course:
         return {"message": "Course not found"}, 404
-    title = (body.get("title") or "").strip()
-    ass_type = (body.get("type") or "short").strip().lower()
-    due_at_raw = (body.get("dueAt") or "").strip()
+
+    attachment_path = None
+    title = ""
+    ass_type = "short"
+    due_at_raw = ""
+    rubric_template = ""
+    timer_seconds = None
+    quiz_payload = None
+    publish_at = None
+
+    ct = (request.content_type or "").lower()
+    if "multipart/form-data" in ct:
+        title = (request.form.get("title") or "").strip()
+        ass_type = (request.form.get("type") or "short").strip().lower()
+        due_at_raw = (request.form.get("dueAt") or "").strip()
+        rubric_template = (request.form.get("rubricTemplate") or "").strip()
+        timer_seconds = int(request.form.get("timerSeconds") or 0) or None
+        quiz_raw = request.form.get("quizPayload") or ""
+        if quiz_raw.strip():
+            try:
+                quiz_payload = json.loads(quiz_raw)
+            except Exception:
+                return {"message": "Invalid quizPayload JSON"}, 400
+        try:
+            publish_at = parse_iso_datetime(request.form.get("publishAt") or "")
+        except Exception:
+            return {"message": "Invalid publishAt datetime"}, 400
+        upload = request.files.get("attachment")
+        if upload and upload.filename:
+            safe_name = secure_filename(upload.filename or "attachment")
+            stored_name = f"{uuid.uuid4().hex}_{safe_name}"
+            abs_path = os.path.join(current_app.config["UPLOAD_FOLDER"], stored_name)
+            upload.save(abs_path)
+            attachment_path = f"/api/uploads/{stored_name}"
+    else:
+        body = request.get_json(silent=True) or {}
+        title = (body.get("title") or "").strip()
+        ass_type = (body.get("type") or "short").strip().lower()
+        due_at_raw = (body.get("dueAt") or "").strip()
+        rubric_template = (body.get("rubricTemplate") or "").strip()
+        timer_seconds = int(body.get("timerSeconds") or 0) or None
+        quiz_payload = body.get("quizPayload")
+        try:
+            publish_at = parse_iso_datetime(body.get("publishAt") or "")
+        except Exception:
+            return {"message": "Invalid publishAt datetime"}, 400
+
     if not title:
         return {"message": "title is required"}, 400
+
     due_at = None
-    publish_at = None
     if due_at_raw:
         try:
             due_at = datetime.fromisoformat(due_at_raw.replace("Z", "+00:00")).replace(tzinfo=None)
         except Exception:
             return {"message": "Invalid dueAt datetime"}, 400
-    try:
-        publish_at = parse_iso_datetime(body.get("publishAt") or "")
-    except Exception:
-        return {"message": "Invalid publishAt datetime"}, 400
-    quiz_payload = body.get("quizPayload")
+
     quiz_text = ""
-    if quiz_payload:
+    if quiz_payload is not None:
         try:
             quiz_text = json.dumps(quiz_payload)
         except Exception:
             return {"message": "Invalid quizPayload"}, 400
+
     row = Assignment(
         course_id=course_id,
         title=title,
         type=ass_type,
         due_at=due_at,
         publish_at=publish_at,
-        rubric_template=(body.get("rubricTemplate") or "").strip(),
+        rubric_template=rubric_template,
         quiz_payload=quiz_text or None,
-        timer_seconds=int(body.get("timerSeconds") or 0) or None,
+        timer_seconds=timer_seconds,
+        attachment_path=attachment_path,
     )
     db.session.add(row)
     db.session.commit()
-    return {"status": "success", "item": {"id": row.id}}
+    return {"status": "success", "item": {"id": row.id, "attachmentPath": attachment_path or ""}}
 
 
 @admin_bp.post("/admin/comments")
@@ -299,6 +406,7 @@ def delete_book(book_id):
 @require_auth(role="admin")
 def forum_posts():
     rows = ForumPost.query.order_by(ForumPost.created_at.desc()).all()
+    rmap = _forum_replies_map([r.id for r in rows])
     return {
         "items": [
             {
@@ -313,6 +421,7 @@ def forum_posts():
                 "last": row.last_activity_text,
                 "content": row.content or "",
                 "image": row.image or "",
+                "replyList": rmap.get(row.id, []),
             }
             for row in rows
         ]
@@ -326,6 +435,46 @@ def delete_forum_post(post_id):
     if not row:
         return {"message": "Post not found"}, 404
     db.session.delete(row)
+    db.session.commit()
+    return {"status": "success"}
+
+
+@admin_bp.post("/admin/forum-posts/<int:post_id>/replies")
+@require_auth(role="admin")
+def admin_reply_forum_post(post_id):
+    body = request.get_json(silent=True) or {}
+    text = (body.get("message") or body.get("text") or "").strip()
+    if not text:
+        return {"message": "message is required"}, 400
+    post = ForumPost.query.get(post_id)
+    if not post:
+        return {"message": "Post not found"}, 404
+    rep = ForumReply(
+        post_id=post_id,
+        author_role="admin",
+        author_name=(g.current_user.name if g.current_user else None) or "Admin",
+        text=text,
+    )
+    db.session.add(rep)
+    post.last_activity_text = "Just now"
+    db.session.flush()
+    post.replies = ForumReply.query.filter_by(post_id=post_id).count()
+    db.session.commit()
+    return {"status": "success", "item": {"id": rep.id}}
+
+
+@admin_bp.delete("/admin/forum-replies/<int:reply_id>")
+@require_auth(role="admin")
+def delete_forum_reply(reply_id):
+    rep = ForumReply.query.get(reply_id)
+    if not rep:
+        return {"message": "Reply not found"}, 404
+    pid = rep.post_id
+    db.session.delete(rep)
+    post = ForumPost.query.get(pid)
+    if post:
+        db.session.flush()
+        post.replies = ForumReply.query.filter_by(post_id=pid).count()
     db.session.commit()
     return {"status": "success"}
 

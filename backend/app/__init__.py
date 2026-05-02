@@ -104,6 +104,8 @@ def create_app() -> Flask:
                 ensure_column("assignments", "rubric_template", "ALTER TABLE assignments ADD COLUMN rubric_template TEXT NULL")
                 ensure_column("assignments", "quiz_payload", "ALTER TABLE assignments ADD COLUMN quiz_payload LONGTEXT NULL")
                 ensure_column("assignments", "timer_seconds", "ALTER TABLE assignments ADD COLUMN timer_seconds INT NULL")
+                ensure_column("assignments", "attachment_path", "ALTER TABLE assignments ADD COLUMN attachment_path VARCHAR(512) NULL")
+                ensure_column("courses", "join_code", "ALTER TABLE courses ADD COLUMN join_code VARCHAR(32) NULL")
                 ensure_column("announcements", "publish_at", "ALTER TABLE announcements ADD COLUMN publish_at DATETIME NULL")
                 ensure_column("materials", "publish_at", "ALTER TABLE materials ADD COLUMN publish_at DATETIME NULL")
                 ensure_column("users", "bio", "ALTER TABLE users ADD COLUMN bio TEXT NULL")
@@ -114,6 +116,23 @@ def create_app() -> Flask:
                     "notification_pref",
                     "ALTER TABLE users ADD COLUMN notification_pref VARCHAR(80) NOT NULL DEFAULT 'All notifications'",
                 )
+                if _table_exists("forum_posts"):
+                    db.session.execute(
+                        text(
+                            """
+                            CREATE TABLE IF NOT EXISTS forum_replies (
+                              id INT AUTO_INCREMENT PRIMARY KEY,
+                              post_id INT NOT NULL,
+                              author_role VARCHAR(20) NOT NULL DEFAULT 'student',
+                              author_name VARCHAR(120) NOT NULL,
+                              text TEXT NOT NULL,
+                              created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                              CONSTRAINT fk_forum_reply_post FOREIGN KEY (post_id) REFERENCES forum_posts(id) ON DELETE CASCADE,
+                              INDEX ix_forum_replies_post (post_id)
+                            )
+                            """
+                        )
+                    )
                 if _table_exists("assignments") and _table_exists("users"):
                     db.session.execute(
                         text(
