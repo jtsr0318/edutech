@@ -162,6 +162,24 @@ const API_BASE_URL =
   localStorage.getItem("edutech_api_base") ||
   String(window.EDUTECH_API_BASE_URL || "").trim() ||
   resolveDefaultApiBase();
+
+/** Use for <a href> / <img src> when the API stores paths like /api/uploads/... — must hit the API host, not the Vercel static origin. */
+function resolvePublicApiUrl(path) {
+  const p = String(path ?? "").trim();
+  if (p === "#") return "#";
+  if (!p) return "";
+  if (/^https?:\/\//i.test(p)) return p;
+  if (p.startsWith("/api/")) {
+    try {
+      const origin = new URL(API_BASE_URL).origin;
+      return `${origin}${p}`;
+    } catch {
+      return p;
+    }
+  }
+  return p;
+}
+
 let forumSearchTerm = state.forumSearch;
 let courseSearchTerm = state.courseSearch;
 let filterState = {
@@ -2768,7 +2786,7 @@ function adminPageContent() {
                               <strong>Uploaded Materials</strong>
                               ${courseMaterials
                                 .map(
-                                  (m) => `<div class="item"><div class="split"><span>${m.name}</span><small>${m.type}</small></div><div class="button-row"><a class="button button-secondary" href="${m.filePath || m.url || "#"}" target="_blank" rel="noopener noreferrer">Open</a><button class="button button-secondary" onclick="deleteAdminMaterial('${m.id}')">Delete</button></div></div>`
+                                  (m) => `<div class="item"><div class="split"><span>${m.name}</span><small>${m.type}</small></div><div class="button-row"><a class="button button-secondary" href="${escapeHtml(resolvePublicApiUrl(m.filePath || m.url || "#"))}" target="_blank" rel="noopener noreferrer">Open</a><button class="button button-secondary" onclick="deleteAdminMaterial('${m.id}')">Delete</button></div></div>`
                                 )
                                 .join("") || `<p class="muted">No materials uploaded yet.</p>`}
                             </article>
@@ -3222,7 +3240,7 @@ function forumPostsMarkup(posts) {
               <p>${post.content || ""}</p>
               <p class="muted">${post.author} | ${post.replies} Replies | ${post.likes} Likes | ${post.last}</p>
             </div>
-            ${post.image ? `<img src="${post.image}" alt="${post.title}" class="forum-post-image" />` : ""}
+            ${post.image ? `<img src="${escapeHtml(resolvePublicApiUrl(post.image))}" alt="${post.title}" class="forum-post-image" />` : ""}
           </div>
           <div class="forum-actions">
             <button class="button button-secondary" onclick="viewPost('${post.id}')">View Post</button>
@@ -3238,7 +3256,7 @@ function bookstoreCardsMarkup(filteredBooks) {
     .map(
       (book) => `
           <article class="card bookstore-card">
-            <img src="${book.image}" alt="${book.title}" class="book-image" />
+            <img src="${escapeHtml(resolvePublicApiUrl(book.image))}" alt="${book.title}" class="book-image" />
             <div class="book-card-body">
               <div class="split">
                 <span class="category-label">${book.category}</span>
@@ -3386,8 +3404,9 @@ function assignmentOverviewView() {
 function renderAssignmentBody(assignment) {
   const submission = state.assignmentSubmissions[assignment.id];
   const attPath = assignment.attachmentPath || assignment.attachment_path;
+  const attHref = resolvePublicApiUrl(attPath);
   const teacherAttachment = attPath
-    ? `<div class="card"><h4>Teacher file</h4><p><a class="button button-secondary" href="${attPath}" target="_blank" rel="noopener noreferrer">Download attachment</a></p></div>`
+    ? `<div class="card"><h4>Teacher file</h4><p><a class="button button-secondary" href="${escapeHtml(attHref)}" target="_blank" rel="noopener noreferrer">Download attachment</a></p></div>`
     : "";
   const rubricBlock = assignment.rubricTemplate
     ? `<div class="card"><h4>Rubric</h4><p class="muted">${assignment.rubricTemplate}</p></div>`
@@ -3625,8 +3644,8 @@ function renderCourseTabContent() {
                   </div>
                 </div>
                 <div class="material-file-actions">
-                  <a class="button button-primary" href="${m.filePath || "#"}" target="_blank" rel="noopener noreferrer">Open File</a>
-                  <a class="button button-secondary" href="${m.filePath || "#"}" download>Download</a>
+                  <a class="button button-primary" href="${escapeHtml(resolvePublicApiUrl(m.filePath || "#"))}" target="_blank" rel="noopener noreferrer">Open File</a>
+                  <a class="button button-secondary" href="${escapeHtml(resolvePublicApiUrl(m.filePath || "#"))}" download>Download</a>
                 </div>
                 ${commentsBlock(`${m.id}-material-comments`, "material", m.id)}
               </div>
@@ -3762,7 +3781,7 @@ function forumView() {
                 </div>
                 <p class="muted">By ${activePost.author} · ${activePost.last} · ${activePost.likes} likes · ${activePost.replies} replies</p>
                 <p>${activePost.content || "No additional content."}</p>
-                ${activePost.image ? `<img src="${activePost.image}" alt="${activePost.title}" class="forum-preview-image" />` : ""}
+                ${activePost.image ? `<img src="${escapeHtml(resolvePublicApiUrl(activePost.image))}" alt="${activePost.title}" class="forum-preview-image" />` : ""}
                 <div class="forum-thread-replies">
                   ${(activePost.replyList || [])
                     .map(
