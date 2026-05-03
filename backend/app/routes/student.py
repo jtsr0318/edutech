@@ -271,13 +271,13 @@ def checkout():
 @student_bp.get("/courses")
 @require_auth()
 def list_courses():
-    if _is_admin_user():
-        rows = Course.query.order_by(Course.created_at.desc()).all()
-    else:
-        ids = _enrolled_course_ids(g.current_user.id)
-        if not ids:
-            return {"items": []}
-        rows = Course.query.filter(Course.id.in_(ids)).order_by(Course.created_at.desc()).all()
+    enrolled_ids = set()
+
+    if not _is_admin_user():
+        enrolled_ids = set(_enrolled_course_ids(g.current_user.id))
+
+    rows = Course.query.order_by(Course.created_at.desc()).all()
+
     return {
         "items": [
             {
@@ -285,12 +285,14 @@ def list_courses():
                 "name": row.name,
                 "lecturerName": row.lecturer_name or "Lecturer",
                 "message": row.message,
+                "description": row.message or "This course provides learning materials, announcements, and assignments.",
                 "icon": row.icon or "",
+                "isEnrolled": True if _is_admin_user() else row.id in enrolled_ids,
+                "progress": 0,
             }
             for row in rows
         ]
     }
-
 
 @student_bp.post("/courses/join")
 @require_auth()
