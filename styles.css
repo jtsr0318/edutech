@@ -2761,68 +2761,20 @@ a.assignment-text-link {
   font-size: 0.82rem;
 }
 
-.assignment-comments-flow {
-  margin-top: 1rem;
-  padding-top: 0.75rem;
-  border-top: 1px solid var(--line);
+.assignment-attachment-block {
+  margin: 0 0 0.85rem;
 }
 
-.assignment-comments-heading {
-  margin: 0 0 0.45rem;
-  font-size: 0.78rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--subtext);
+.assignment-inline-preview {
+  margin-top: 0.45rem;
+  overflow: hidden;
+  border-radius: 6px;
+  background: #f4f5f7;
 }
 
-.assignment-comment-thread {
-  margin-bottom: 0.5rem;
-}
-
-.assignment-comment-line {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem 0.5rem;
-  align-items: baseline;
-  padding: 0.3rem 0;
-  font-size: 0.86rem;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
-}
-
-.assignment-comment-author {
-  font-weight: 600;
-  color: var(--text);
-}
-
-.assignment-comment-text {
-  flex: 1 1 12rem;
-  min-width: 0;
-  color: var(--text);
-}
-
-.assignment-comment-time {
-  font-size: 0.78rem;
-}
-
-.assignment-comment-empty {
-  margin: 0.25rem 0;
-  font-size: 0.85rem;
-}
-
-.assignment-comment-compose {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  align-items: center;
-}
-
-.assignment-comment-input {
-  flex: 1 1 12rem;
-  min-width: 10rem;
-  padding: 0.45rem 0.55rem;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  font: inherit;
-  font-size: 0.88rem;
+.assignment-preview-iframe {
+  width: 100%;
+  min-height: 20rem;
+  border: 0;
+  display: block;
 }

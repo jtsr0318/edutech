@@ -67,6 +67,9 @@ const state = {
   dropdownOpen: false,
   materialOpen: {},
   assignmentOpen: {},
+  assignmentPreviewOpen: {},
+  assignmentPreviewBlobUrl: {},
+  assignmentPreviewLoading: {},
   announcementCommentOpen: {},
   announcementSaved: {},
   announcementCommentDrafts: {},
@@ -245,6 +248,52 @@ async function openAssignmentAttachment(assignmentId) {
   } catch (err) {
     pushToast("error", err.message || "Could not open attachment.");
   }
+}
+
+function revokeAllAssignmentPreviewUrls() {
+  const urls = state.assignmentPreviewBlobUrl || {};
+  Object.keys(urls).forEach((k) => {
+    const u = urls[k];
+    if (u) {
+      try {
+        URL.revokeObjectURL(u);
+      } catch (_) {}
+    }
+  });
+  state.assignmentPreviewOpen = {};
+  state.assignmentPreviewBlobUrl = {};
+  state.assignmentPreviewLoading = {};
+}
+
+async function toggleAssignmentPreview(assignmentId) {
+  const id = String(assignmentId);
+  if (state.assignmentPreviewOpen[id]) {
+    const u = state.assignmentPreviewBlobUrl[id];
+    if (u) {
+      try {
+        URL.revokeObjectURL(u);
+      } catch (_) {}
+    }
+    delete state.assignmentPreviewBlobUrl[id];
+    delete state.assignmentPreviewLoading[id];
+    state.assignmentPreviewOpen[id] = false;
+    render();
+    return;
+  }
+  state.assignmentPreviewOpen[id] = true;
+  state.assignmentPreviewLoading[id] = true;
+  render();
+  try {
+    const blob = await fetchAuthorizedBinary(`/assignments/${encodeURIComponent(id)}/attachment`);
+    state.assignmentPreviewBlobUrl[id] = URL.createObjectURL(blob);
+    state.assignmentPreviewLoading[id] = false;
+  } catch (err) {
+    delete state.assignmentPreviewBlobUrl[id];
+    state.assignmentPreviewLoading[id] = false;
+    state.assignmentPreviewOpen[id] = false;
+    pushToast("error", err.message || "Could not load preview.");
+  }
+  render();
 }
 
 function materialFileActionsHtml(m) {
@@ -1675,6 +1724,7 @@ function logout() {
   }
   clearSession();
   clearEduRouteHash();
+  revokeAllAssignmentPreviewUrls();
   state.isLoggedIn = false;
   state.authToken = "";
   state.authRole = "student";
@@ -3682,9 +3732,25 @@ function assignmentTeacherAttachmentRow(assignment, locked) {
     return `<div class="assignment-attachment-row muted">Teacher file — available when published</div>`;
   }
   if (attPath.startsWith("/api/assignments/")) {
-    return `<div class="assignment-attachment-row">
-      <span class="assignment-attachment-icon" aria-hidden="true">📎</span>
-      <button type="button" class="assignment-text-link" onclick="openAssignmentAttachment('${assignment.id}')">Teacher file — preview</button>
+    const id = String(assignment.id);
+    const previewOpen = !!state.assignmentPreviewOpen[id];
+    const loading = !!state.assignmentPreviewLoading[id];
+    const blobUrl = state.assignmentPreviewBlobUrl[id] || "";
+    const linkLabel = previewOpen ? "Hide preview" : "Teacher file — preview";
+    let previewBlock = "";
+    if (previewOpen) {
+      previewBlock = loading
+        ? `<div class="assignment-inline-preview"><p class="muted">Loading…</p></div>`
+        : blobUrl
+          ? `<div class="assignment-inline-preview"><iframe class="assignment-preview-iframe" title="Attachment preview" src="${escapeHtml(blobUrl)}"></iframe></div>`
+          : `<div class="assignment-inline-preview"><p class="muted">Preview unavailable.</p></div>`;
+    }
+    return `<div class="assignment-attachment-block">
+      <div class="assignment-attachment-row">
+        <span class="assignment-attachment-icon" aria-hidden="true">📎</span>
+        <button type="button" class="assignment-text-link" onclick="toggleAssignmentPreview('${id}')">${linkLabel}</button>
+      </div>
+      ${previewBlock}
     </div>`;
   }
   return `<div class="assignment-attachment-row">
@@ -3698,30 +3764,6 @@ function assignmentSubmissionLine(submission) {
   return `<p class="assignment-done-line muted">${submission.isLate ? "Submitted late" : "Submitted"} · ${formatSubmittedTime(submission.submittedAt)}${submission.sourceLabel ? ` · ${escapeHtml(submission.sourceLabel)}` : ""}</p>`;
 }
 
-function assignmentCommentsFlow(key, contentType, contentId) {
-  const postedComments = getContentComments(contentType, contentId);
-  return `
-    <div class="assignment-comments-flow">
-      <h4 class="assignment-comments-heading">Discussion</h4>
-      <div class="assignment-comment-thread">
-        ${postedComments
-          .map(
-            (c) => `
-          <div class="assignment-comment-line">
-            <span class="assignment-comment-author">${escapeHtml(c.authorName || "User")}</span>
-            <span class="assignment-comment-text">${escapeHtml(c.text)}</span>
-            <span class="muted assignment-comment-time">${formatChatTime(c.createdAt)}</span>
-          </div>`
-          )
-          .join("") || `<p class="muted assignment-comment-empty">No comments yet.</p>`}
-      </div>
-      <div class="assignment-comment-compose">
-        <input type="text" class="assignment-comment-input" placeholder="Add a comment" value="${state.commentDrafts[key] || ""}" oninput="updateCommentDraft('${key}', this.value)" />
-        <button type="button" class="button button-secondary compact-btn" onclick="postComment('${key}')">Post</button>
-      </div>
-    </div>`;
-}
-
 function renderAssignmentBody(assignment) {
   const submission = state.assignmentSubmissions[assignment.id];
   const locked = assignment.isPublished === false;
@@ -3732,7 +3774,7 @@ function renderAssignmentBody(assignment) {
   const instr = assignmentInstructionsBlock(assignment);
   const attachRow = assignmentTeacherAttachmentRow(assignment, locked);
   const subLine = assignmentSubmissionLine(submission);
-  const discuss = assignmentCommentsFlow(`${assignment.id}-comments`, "assignment", assignment.id);
+  const discuss = commentsBlock(`${assignment.id}-comments`, "assignment", assignment.id);
 
   if (assignment.type === "mcq") {
     const payload = assignment.quizPayload && Array.isArray(assignment.quizPayload.questions) ? assignment.quizPayload : { questions: [] };
