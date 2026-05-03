@@ -1647,6 +1647,29 @@ function editAdminBook(bookId) {
   render();
 }
 
+function newAdminBook() {
+  const f = state.adminBookForm;
+  const hasDraft =
+    String(f.title || "").trim() ||
+    String(f.country || "").trim() ||
+    String(f.area || "").trim() ||
+    String(f.type || "").trim() ||
+    String(f.category || "").trim() ||
+    String(f.description || "").trim() ||
+    String(f.image || "").trim() ||
+    Number(f.price || 0) > 0 ||
+    Number(f.stock || 0) > 0;
+  if (f.id || hasDraft) {
+    const msg = f.id
+      ? "Start a new product? The editor will clear; this does not remove the item from the catalog."
+      : "Clear the form to add a new product?";
+    if (!window.confirm(msg)) return;
+  }
+  state.adminBookForm = { id: "", title: "", price: 0, country: "", area: "", type: "", category: "", description: "", image: "", stock: 0 };
+  state.adminBookShowStorefrontPreview = false;
+  render();
+}
+
 async function saveAdminBook() {
   try {
     const payload = {
@@ -3293,7 +3316,10 @@ function adminPageContent() {
       </section>
       <section class="admin-books-layout">
         <article class="card admin-surface">
-          <h3>Book Editor</h3>
+          <div class="split admin-book-editor-heading">
+            <h3>Book Editor</h3>
+            <button type="button" class="button button-secondary" onclick="newAdminBook()">Add new product</button>
+          </div>
           <div class="grid-2">
             <div class="field"><label>Title</label><input value="${state.adminBookForm.title}" oninput="updateAdminBookForm('title', this.value)" /></div>
             <div class="field"><label>Price (RM)</label><input type="number" min="0" value="${state.adminBookForm.price}" oninput="updateAdminBookForm('price', this.value)" /></div>

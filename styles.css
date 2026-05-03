@@ -1659,6 +1659,14 @@ textarea {
   overflow: auto;
 }
 
+.admin-book-editor-heading h3 {
+  margin: 0;
+}
+
+.admin-book-editor-heading {
+  margin-bottom: 0.75rem;
+}
+
 .admin-books-layout {
   display: grid;
   grid-template-columns: 1fr 1fr;
