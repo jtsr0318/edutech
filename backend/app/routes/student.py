@@ -6,12 +6,14 @@ from decimal import Decimal
 
 from flask import Blueprint, Response, current_app, g, request, send_from_directory
 from sqlalchemy.exc import IntegrityError
+from werkzeug.utils import secure_filename
 
 from ..auth import require_auth
 from ..extensions import db
 from ..models import (
     Announcement,
     Assignment,
+    AssignmentStudentUpload,
     Book,
     CartItem,
     ContentComment,
@@ -139,12 +141,28 @@ def me_data():
 
     progress_by_course = {}
     for enrollment, course in enrollments:
-        total = Assignment.query.filter_by(course_id=course.id).count()
-        completed = (
-            Submission.query.join(Assignment, Submission.assignment_id == Assignment.id)
+        assignments = Assignment.query.filter_by(course_id=course.id).all()
+        total = len(assignments)
+        submitted_ids = {
+            aid
+            for (aid,) in Submission.query.join(Assignment, Submission.assignment_id == Assignment.id)
             .filter(Submission.user_id == g.current_user.id, Assignment.course_id == course.id)
-            .count()
-        )
+            .with_entities(Submission.assignment_id)
+            .all()
+        }
+        quiz_done_ids = {
+            aid
+            for (aid,) in QuizAttempt.query.join(Assignment, QuizAttempt.assignment_id == Assignment.id)
+            .filter(QuizAttempt.user_id == g.current_user.id, Assignment.course_id == course.id)
+            .with_entities(QuizAttempt.assignment_id)
+            .all()
+        }
+        completed = 0
+        for a in assignments:
+            if a.id in submitted_ids:
+                completed += 1
+            elif (a.type or "").lower() == "mcq" and a.id in quiz_done_ids:
+                completed += 1
         progress_by_course[course.name] = round((completed / total) * 100) if total else 0
 
     saved = SavedAnnouncement.query.filter_by(user_id=g.current_user.id).all()
@@ -346,6 +364,17 @@ def list_assignments():
         key = int(item.assignment_id)
         if key not in latest_attempt_by_assignment:
             latest_attempt_by_assignment[key] = item
+
+    upload_by_assignment = {}
+    if not _is_admin_user() and rows:
+        aid_list = [int(r.id) for r, _, _ in rows]
+        if aid_list:
+            for upl in AssignmentStudentUpload.query.filter(
+                AssignmentStudentUpload.user_id == g.current_user.id,
+                AssignmentStudentUpload.assignment_id.in_(aid_list),
+            ).all():
+                upload_by_assignment[int(upl.assignment_id)] = upl
+
     return {
         "items": [
             {
@@ -381,6 +410,14 @@ def list_assignments():
                     else None
                 ),
                 "attachmentPath": row.attachment_path or "",
+                "studentUpload": (
+                    {
+                        "fileName": upload_by_assignment[row.id].file_name or "",
+                        "updatedAt": upload_by_assignment[row.id].updated_at.isoformat(),
+                    }
+                    if upload_by_assignment.get(int(row.id))
+                    else None
+                ),
             }
             for row, course, submission in rows
         ]
@@ -495,6 +532,83 @@ def download_assignment_attachment(assignment_id):
     return {"message": "File unavailable"}, 404
 
 
+@student_bp.post("/assignments/<int:assignment_id>/student-upload")
+@require_auth()
+def upload_assignment_student_file(assignment_id):
+    if _is_admin_user():
+        return {"message": "Students only."}, 403
+    assignment = Assignment.query.get(assignment_id)
+    if not assignment:
+        return {"message": "Assignment not found."}, 404
+    if assignment.type != "upload":
+        return {"message": "This assignment does not accept file uploads."}, 400
+    if assignment.course_id not in _enrolled_course_ids(g.current_user.id):
+        return {"message": "Not enrolled in this course."}, 403
+    now = datetime.utcnow()
+    if _assignment_publish_blocks_student(assignment, now):
+        return {"message": "Assignment is not published yet."}, 403
+
+    upload = request.files.get("file")
+    if not upload or not (upload.filename or "").strip():
+        return {"message": "file is required."}, 400
+    raw = upload.read()
+    max_bytes = int(current_app.config.get("MAX_UPLOAD_BYTES") or 32 * 1024 * 1024)
+    if len(raw) > max_bytes:
+        return {"message": "File too large."}, 413
+
+    safe_name = secure_filename(upload.filename) or "upload"
+    mime = upload.mimetype or "application/octet-stream"
+
+    row = AssignmentStudentUpload.query.filter_by(assignment_id=assignment_id, user_id=g.current_user.id).first()
+    if row:
+        row.file_blob = raw
+        row.file_mime = mime
+        row.file_name = safe_name[:255]
+        row.updated_at = datetime.utcnow()
+    else:
+        row = AssignmentStudentUpload(
+            assignment_id=assignment_id,
+            user_id=g.current_user.id,
+            file_blob=raw,
+            file_mime=mime,
+            file_name=safe_name[:255],
+            updated_at=datetime.utcnow(),
+        )
+        db.session.add(row)
+    db.session.commit()
+    return {
+        "status": "success",
+        "item": {"fileName": row.file_name, "updatedAt": row.updated_at.isoformat()},
+    }
+
+
+@student_bp.get("/assignments/<int:assignment_id>/student-upload")
+@require_auth()
+def download_assignment_student_upload(assignment_id):
+    if _is_admin_user():
+        return {"message": "Students only."}, 403
+    assignment = Assignment.query.get(assignment_id)
+    if not assignment:
+        return {"message": "Assignment not found."}, 404
+    if assignment.course_id not in _enrolled_course_ids(g.current_user.id):
+        return {"message": "Not enrolled in this course."}, 403
+    now = datetime.utcnow()
+    if _assignment_publish_blocks_student(assignment, now):
+        return {"message": "Assignment is not published yet."}, 403
+
+    row = AssignmentStudentUpload.query.filter_by(assignment_id=assignment_id, user_id=g.current_user.id).first()
+    if not row:
+        return {"message": "No file uploaded yet."}, 404
+    blob = row.file_blob
+    if not blob:
+        return {"message": "File unavailable"}, 404
+    return Response(
+        blob,
+        mimetype=row.file_mime or "application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{_safe_download_filename(row.file_name)}"'},
+    )
+
+
 @student_bp.get("/comments")
 @require_auth()
 def list_comments():
@@ -563,7 +677,7 @@ def submit_assignment(assignment_id):
         return {"message": "Assignment is not published yet."}, 403
     is_late = bool(assignment.due_at and submitted_at > assignment.due_at)
     status = "late" if is_late else "submitted"
-    source_label = (body.get("sourceLabel") or "").strip()
+    source_label = (body.get("sourceLabel") or "").strip()[:100]
 
     row = Submission.query.filter_by(assignment_id=assignment_id, user_id=g.current_user.id).first()
     if row:

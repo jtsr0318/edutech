@@ -1,9 +1,7 @@
 from flask import Blueprint, g
-from sqlalchemy import func
-
 from ..auth import require_auth
 from ..extensions import db
-from ..models import Assignment, Course, Submission
+from ..models import Assignment, Course, QuizAttempt, Submission
 
 course_bp = Blueprint("course", __name__)
 
@@ -19,14 +17,28 @@ def course_progress(course_id):
     if not course:
         return {"message": "Course not found."}, 404
 
-    total_assignments = Assignment.query.filter(Assignment.course_id == course.id).count()
-    completed_assignments = (
-        Submission.query.join(Assignment, Submission.assignment_id == Assignment.id)
+    assignments = Assignment.query.filter(Assignment.course_id == course.id).all()
+    total_assignments = len(assignments)
+    submitted_ids = {
+        aid
+        for (aid,) in Submission.query.join(Assignment, Submission.assignment_id == Assignment.id)
         .filter(Submission.user_id == g.current_user.id, Assignment.course_id == course.id)
-        .with_entities(func.count(Submission.id))
-        .scalar()
-        or 0
-    )
+        .with_entities(Submission.assignment_id)
+        .all()
+    }
+    quiz_done_ids = {
+        aid
+        for (aid,) in QuizAttempt.query.join(Assignment, QuizAttempt.assignment_id == Assignment.id)
+        .filter(QuizAttempt.user_id == g.current_user.id, Assignment.course_id == course.id)
+        .with_entities(QuizAttempt.assignment_id)
+        .all()
+    }
+    completed_assignments = 0
+    for a in assignments:
+        if a.id in submitted_ids:
+            completed_assignments += 1
+        elif (a.type or "").lower() == "mcq" and a.id in quiz_done_ids:
+            completed_assignments += 1
     progress = round((completed_assignments / total_assignments) * 100) if total_assignments else 0
     return {
         "courseId": course.id,

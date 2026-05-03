@@ -103,6 +103,8 @@ const state = {
   quizStartAtByAssignment: {},
   quizTimerNow: Date.now(),
   quizHistoryByAssignment: {},
+  /** When true for an assignment id, student is in a fresh MCQ attempt (timer + no explanations until next submit). */
+  quizRetryMode: {},
   commentDrafts: {},
   commentsByKey: {},
   shortAnswerDrafts: {},
@@ -202,7 +204,74 @@ async function fetchAuthorizedBinary(apiPath) {
     }
     throw new Error(msg);
   }
-  return res.blob();
+  const blob = await res.blob();
+  const ct = (res.headers.get("Content-Type") || "").split(";")[0].trim();
+  if (ct && ct !== "application/octet-stream" && (!blob.type || blob.type === "application/octet-stream")) {
+    return blob.slice(0, blob.size, ct);
+  }
+  return blob;
+}
+
+function triggerStudentAssignmentUploadPick(assignmentId) {
+  const el = document.getElementById(`student-assignment-upload-${String(assignmentId)}`);
+  if (el) el.click();
+}
+
+async function onStudentAssignmentUploadPick(assignmentId, input) {
+  const id = String(assignmentId);
+  const f = input && input.files && input.files[0];
+  if (input) input.value = "";
+  if (!f) return;
+  try {
+    const fd = new FormData();
+    fd.append("file", f);
+    await apiRequest(`/assignments/${encodeURIComponent(id)}/student-upload`, { method: "POST", body: fd });
+    await loadDataDrivenCollections();
+    pushToast("success", `文件已上传：${f.name}。需要交卷时请再点 Mark as Done。`);
+    render();
+  } catch (err) {
+    pushToast("error", err.message || "上传失败。");
+  }
+}
+
+async function downloadAssignmentAttachment(assignmentId) {
+  const id = String(assignmentId);
+  try {
+    const blob = await fetchAuthorizedBinary(`/assignments/${encodeURIComponent(id)}/attachment`);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `teacher-attachment-${id}`;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 120000);
+  } catch (err) {
+    pushToast("error", err.message || "下载失败。");
+  }
+}
+
+async function downloadMyStudentAssignmentUpload(assignmentId, downloadName) {
+  const id = String(assignmentId);
+  const safe = String(downloadName || "")
+    .trim()
+    .replace(/[\\/]/g, "_")
+    .slice(0, 180);
+  try {
+    const blob = await fetchAuthorizedBinary(`/assignments/${encodeURIComponent(id)}/student-upload`);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = safe || `my-submission-${id}`;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 120000);
+  } catch (err) {
+    pushToast("error", err.message || "下载失败。");
+  }
 }
 
 async function openMaterialFromApi(materialId) {
@@ -229,17 +298,6 @@ async function downloadMaterialFromApi(materialId) {
     setTimeout(() => URL.revokeObjectURL(a.href), 60000);
   } catch (err) {
     pushToast("error", err.message || "Download failed.");
-  }
-}
-
-async function openAssignmentAttachment(assignmentId) {
-  try {
-    const blob = await fetchAuthorizedBinary(`/assignments/${encodeURIComponent(assignmentId)}/attachment`);
-    const url = URL.createObjectURL(blob);
-    window.open(url, "_blank", "noopener,noreferrer");
-    setTimeout(() => URL.revokeObjectURL(url), 180000);
-  } catch (err) {
-    pushToast("error", err.message || "Could not open attachment.");
   }
 }
 
@@ -1740,6 +1798,10 @@ function logout() {
   state.postLoginPage = "home";
   state.selectedCourse = "Web Technology";
   state.dropdownOpen = false;
+  state.quizRetryMode = {};
+  state.quizDraftAnswers = {};
+  state.quizStartAtByAssignment = {};
+  state.selectedMcqOption = {};
   render();
 }
 
@@ -2239,6 +2301,16 @@ function selectMcqOption(assignmentId, questionId, option) {
   render();
 }
 
+function retryMcqQuiz(assignmentId) {
+  const id = String(assignmentId);
+  state.quizRetryMode[id] = true;
+  state.quizDraftAnswers[id] = {};
+  delete state.selectedMcqOption[id];
+  delete state.quizStartAtByAssignment[id];
+  pushToast("info", "已清空本题作答，可重新开始；计时将在你再次选题后开始。");
+  render();
+}
+
 async function submitMcqAnswer(assignmentId) {
   const assignment = (data.assignments || []).find((item) => String(item.id) === String(assignmentId)) || {};
   const answers = state.quizDraftAnswers[assignmentId] || {};
@@ -2259,9 +2331,12 @@ async function submitMcqAnswer(assignmentId) {
     const res = await submitQuizToApi(assignmentId, { answers });
     const attempt = res?.item || {};
     state.quizHistoryByAssignment[assignmentId] = attempt;
+    delete state.quizRetryMode[String(assignmentId)];
     addNotification("Quiz", `Score ${attempt.score || 0}/${attempt.total || 0}`);
     pushToast("success", `Quiz submitted. Score ${attempt.score || 0}/${attempt.total || 0}`);
-    await submitAssignment(assignmentId, "MCQ quiz submission");
+    await loadDataDrivenCollections();
+    await refreshCourseProgress();
+    render();
   } catch (err) {
     pushToast("error", err.message || "Failed to submit quiz.");
   }
@@ -2455,13 +2530,21 @@ async function submitAssignment(assignmentId, sourceLabel) {
     pushToast("error", "Please write your short answer before submitting.");
     return;
   }
+  if (assignment.type === "upload") {
+    const su = assignment.studentUpload;
+    if (!su || !String(su.fileName || "").trim()) {
+      pushToast("error", "请先用 Upload 把文件传到服务器，再点 Mark as Done。");
+      return;
+    }
+  }
+  const label = String(sourceLabel || "").trim().slice(0, 100);
   try {
-    const res = await submitAssignmentToApi(assignmentId, { sourceLabel });
+    const res = await submitAssignmentToApi(assignmentId, { sourceLabel: label });
     const item = res.item || {};
     state.assignmentSubmissions[assignmentId] = {
       submittedAt: item.submittedAt || Date.now(),
       isLate: !!item.isLate,
-      sourceLabel: item.sourceLabel || sourceLabel,
+      sourceLabel: item.sourceLabel || label,
     };
     addNotification(
       "Assignment Submitted",
@@ -3634,9 +3717,10 @@ function assignmentClassroomHeader(assignment) {
 
 function assignmentTeacherStrip(assignment, locked) {
   const attPath = assignment.attachmentPath || assignment.attachment_path;
-  if (!attPath) {
-    return `<div class="assignment-material-strip muted"><span>No teacher file attached</span></div>`;
+  if (!attPath || !String(attPath).trim()) {
+    return "";
   }
+  const id = String(assignment.id);
   const attHref = resolvePublicApiUrl(attPath);
   if (locked) {
     return `<div class="assignment-material-strip muted"><span>Teacher file — available when published</span></div>`;
@@ -3645,16 +3729,15 @@ function assignmentTeacherStrip(assignment, locked) {
     return `<div class="assignment-material-strip">
       <div class="assignment-material-strip-main">
         <span class="assignment-material-name">Teacher attachment</span>
-        <span class="muted assignment-material-sub">Open in a new tab to view</span>
       </div>
-      <button type="button" class="button button-secondary" onclick="openAssignmentAttachment('${assignment.id}')">Open</button>
+      <button type="button" class="button button-secondary" onclick="downloadAssignmentAttachment('${id}')">Download</button>
     </div>`;
   }
   return `<div class="assignment-material-strip">
     <div class="assignment-material-strip-main">
       <span class="assignment-material-name">Teacher attachment</span>
     </div>
-    <a class="button button-secondary" href="${escapeHtml(attHref)}" target="_blank" rel="noopener noreferrer">Open</a>
+    <a class="button button-secondary" href="${escapeHtml(attHref)}" download rel="noopener noreferrer">Download</a>
   </div>`;
 }
 
@@ -3706,7 +3789,7 @@ function renderAssignmentWorkCard(assignment) {
   const header = assignmentClassroomHeader(assignment);
   const instr = assignmentInstructionsSnippet(assignment);
   const strip = assignmentTeacherStrip(assignment, locked);
-  const subLine = assignmentSubmissionLineCard(submission);
+  const subLine = assignment.type === "mcq" ? "" : assignmentSubmissionLineCard(submission);
   const discuss = commentsBlockEmbedded(key, "assignment", assignment.id);
   const rubricLine =
     assignment.rubricTemplate && String(assignment.rubricTemplate).trim()
@@ -3714,6 +3797,12 @@ function renderAssignmentWorkCard(assignment) {
       : "";
 
   if (assignment.type === "upload") {
+    const su = assignment.studentUpload;
+    const uploadedHint =
+      su && String(su.fileName || "").trim()
+        ? `<div class="muted assignment-upload-pick"><span>Uploaded: <strong>${escapeHtml(su.fileName)}</strong>${su.updatedAt ? ` · ${escapeHtml(formatChatTime(su.updatedAt) || "")}` : ""}</span>
+        <button type="button" class="button button-secondary" onclick="downloadMyStudentAssignmentUpload('${assignment.id}', ${JSON.stringify(su.fileName)})">Download my file</button></div>`
+        : "";
     return `<article class="card course-tab-card assignment-classroom-card">
       ${header}
       ${instr}
@@ -3722,10 +3811,12 @@ function renderAssignmentWorkCard(assignment) {
         ${
           locked
             ? `<p class="muted">Submission opens when this assignment is published.</p>`
-            : `<button type="button" class="button button-primary" onclick="submitAssignment('${assignment.id}', 'Upload file')">Upload</button>
+            : `<input type="file" id="student-assignment-upload-${assignment.id}" class="assignment-file-input-hidden" onchange="onStudentAssignmentUploadPick('${assignment.id}', this)" />
+        <button type="button" class="button button-primary" onclick="triggerStudentAssignmentUploadPick('${assignment.id}')">Upload</button>
         <button type="button" class="button button-secondary" onclick="submitAssignment('${assignment.id}', 'Mark as Done')">Mark as Done</button>`
         }
       </div>
+      ${uploadedHint}
       ${subLine}
       ${discuss}
     </article>`;
@@ -3739,6 +3830,7 @@ function renderAssignmentWorkCard(assignment) {
     const elapsed = startedAt ? Math.floor((state.quizTimerNow - startedAt) / 1000) : 0;
     const remaining = timerSeconds > 0 ? Math.max(timerSeconds - elapsed, 0) : 0;
     const latestAttempt = state.quizHistoryByAssignment[assignment.id];
+    const inRetry = !!state.quizRetryMode[String(assignment.id)];
     const questionsHtml =
       questions.length > 0
         ? questions
@@ -3757,22 +3849,32 @@ function renderAssignmentWorkCard(assignment) {
                     )
                     .join("")}
                 </div>
-                ${latestAttempt?.createdAt ? `<p class="muted">Explanation: ${escapeHtml(String(q.explanation || "—"))}</p>` : ""}
+                ${
+                  latestAttempt?.createdAt && String(q.explanation || "").trim() && !inRetry
+                    ? `<p class="muted">Explanation: ${escapeHtml(String(q.explanation).trim())}</p>`
+                    : ""
+                }
               </div>`;
             })
             .join("")
         : `<p class="muted">No quiz questions configured.</p>`;
+    const timerLine =
+      timerSeconds > 0 && (!latestAttempt?.createdAt || inRetry) ? `<p class="muted">Time left: ${remaining}s</p>` : "";
     return `<article class="card course-tab-card assignment-classroom-card">
       ${header}
       ${instr}
-      <p class="muted">Complete all questions, then submit. ${timerSeconds > 0 ? `Timer: ${remaining}s.` : ""}</p>
-      ${timerSeconds > 0 ? `<p class="muted"><strong>Timer:</strong> ${remaining}s ${startedAt ? "" : "(starts when you choose first option)"}</p>` : ""}
+      ${timerLine}
       ${questionsHtml}
       <div class="assignment-classroom-actions">
         ${
           locked
             ? `<p class="muted">Quiz locked until published.</p>`
             : `<button type="button" class="button button-primary" onclick="submitMcqAnswer('${assignment.id}')">Submit Quiz</button>`
+        }
+        ${
+          !locked && latestAttempt?.createdAt
+            ? `<button type="button" class="button button-secondary" onclick="retryMcqQuiz('${assignment.id}')">再次作答</button>`
+            : ""
         }
       </div>
       ${

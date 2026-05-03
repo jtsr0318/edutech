@@ -112,6 +112,22 @@ class Submission(db.Model):
     __table_args__ = (db.UniqueConstraint("assignment_id", "user_id", name="uq_submission_assignment_user"),)
 
 
+class AssignmentStudentUpload(db.Model):
+    """Student file for upload-type assignments (before or after Mark as Done)."""
+
+    __tablename__ = "assignment_student_uploads"
+
+    id = db.Column(db.Integer, primary_key=True)
+    assignment_id = db.Column(db.Integer, db.ForeignKey("assignments.id", ondelete="CASCADE"), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    file_name = db.Column(db.String(255), nullable=False)
+    file_mime = db.Column(db.String(128), nullable=True)
+    file_blob = deferred(db.Column(db.LargeBinary, nullable=False))
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (db.UniqueConstraint("assignment_id", "user_id", name="uq_assignment_student_upload"),)
+
+
 class QuizAttempt(db.Model):
     __tablename__ = "quiz_attempts"
 

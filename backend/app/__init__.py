@@ -142,6 +142,24 @@ def create_app() -> Flask:
                     db.session.execute(
                         text(
                             """
+                            CREATE TABLE IF NOT EXISTS assignment_student_uploads (
+                              id INT AUTO_INCREMENT PRIMARY KEY,
+                              assignment_id INT NOT NULL,
+                              user_id INT NOT NULL,
+                              file_name VARCHAR(255) NOT NULL,
+                              file_mime VARCHAR(128) NULL,
+                              file_blob LONGBLOB NOT NULL,
+                              updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                              CONSTRAINT fk_asu_assignment FOREIGN KEY (assignment_id) REFERENCES assignments(id) ON DELETE CASCADE,
+                              CONSTRAINT fk_asu_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                              UNIQUE KEY uq_assignment_student_upload (assignment_id, user_id)
+                            )
+                            """
+                        )
+                    )
+                    db.session.execute(
+                        text(
+                            """
                             CREATE TABLE IF NOT EXISTS quiz_attempts (
                               id INT AUTO_INCREMENT PRIMARY KEY,
                               assignment_id INT NOT NULL,
