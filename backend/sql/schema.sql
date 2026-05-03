@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS courses (
   lecturer_name VARCHAR(120) NOT NULL DEFAULT 'Lecturer',
   message VARCHAR(180) NOT NULL DEFAULT 'Start by today!',
   icon VARCHAR(255) NULL,
+  join_code VARCHAR(32) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -136,6 +137,17 @@ CREATE TABLE IF NOT EXISTS forum_posts (
   image VARCHAR(255) NULL,
   last_activity_text VARCHAR(80) NOT NULL DEFAULT 'Just now',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS forum_replies (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  post_id INT NOT NULL,
+  author_role VARCHAR(20) NOT NULL DEFAULT 'student',
+  author_name VARCHAR(120) NOT NULL,
+  text TEXT NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_forum_reply_post FOREIGN KEY (post_id) REFERENCES forum_posts(id) ON DELETE CASCADE,
+  INDEX ix_forum_replies_post (post_id)
 );
 
 CREATE TABLE IF NOT EXISTS chat_messages (

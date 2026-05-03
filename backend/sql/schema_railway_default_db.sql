@@ -1,6 +1,7 @@
 -- Use this file on Railway MySQL when the default database name is `railway`
 -- (do NOT run CREATE DATABASE / USE from schema.sql — tables would land in the wrong DB).
 -- Paste the whole file into Railway → MySQL → Data → query editor, then execute.
+-- Table DDL is kept in sync with backend/sql/schema.sql (from first CREATE TABLE onward).
 
 CREATE TABLE IF NOT EXISTS users (
   id INT AUTO_INCREMENT PRIMARY KEY,

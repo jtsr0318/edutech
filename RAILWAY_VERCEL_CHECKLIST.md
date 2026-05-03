@@ -59,10 +59,11 @@
 
 Railway 默认库名一般是 **`railway`**。不要用仓库里的 **`backend/sql/schema.sql` 直接整文件执行**，因为它开头有 `CREATE DATABASE edutech` 和 `USE edutech`，表会建到 **`edutech` 库里**，你在 **`railway`** 的 Data 面板里会一直看到「没有表」。
 
-请改用：
+请改用（二选一，表结构一致）：
 
-- **`backend/sql/schema_railway_default_db.sql`**
+- **`backend/sql/schema_railway_default_db.sql`**（推荐：无 `CREATE DATABASE` / `USE`）
+- 或从 **`backend/sql/schema.sql`** 复制 **从第一个 `CREATE TABLE` 到文件末尾** 的全部语句，在已选中默认库 **`railway`** 的查询窗口里执行（不要执行文件开头的 `CREATE DATABASE` / `USE edutech`）。
 
-操作：**Railway → MySQL → Data**，打开 SQL 编辑器，把该文件 **全文粘贴** 进去执行。执行完后刷新，应能看到多张表。
+操作：**Railway → MySQL → Data**，打开 SQL 编辑器，把所选内容 **全文粘贴** 进去执行。执行完后刷新，应能看到多张表。
 
 然后再触发 **edutech** 服务 **Redeploy**。

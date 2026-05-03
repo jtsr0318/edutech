@@ -17,7 +17,7 @@ Copy `.env.example` to `.env` and fill MySQL credentials.
 
 Run the SQL files in order:
 
-1. `sql/schema.sql`
+1. `sql/schema.sql` (local MySQL: creates `edutech` and tables). On Railway’s default DB named `railway`, use `sql/schema_railway_default_db.sql` instead (same tables, no `CREATE DATABASE` / `USE`).
 2. `sql/seed.sql`
 
 ## 3) Run API
