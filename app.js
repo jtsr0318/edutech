@@ -3552,10 +3552,19 @@ function bindAdminAuthForm() {
 }
 
 function homeView() {
-  const courses = getEffectiveCourses();
-  const overall = Math.round(
-    courses.reduce((total, item) => total + item.progress, 0) / Math.max(courses.length, 1)
-  );
+  const allCourses = getEffectiveCourses();
+
+const courses = allCourses.filter(
+  (course) =>
+    course.isEnrolled ||
+    course.enrolled ||
+    course.joined ||
+    Number(course.progress || 0) > 0
+);
+
+const overall = courses.length
+  ? Math.round(courses.reduce((total, item) => total + Number(item.progress || 0), 0) / courses.length)
+  : 0;
 
   return `
     <div class="page wide-page fixed-frame">
@@ -3588,9 +3597,16 @@ function homeView() {
             <strong>Overall Student Progress</strong>
             <p class="muted">You've completed ${overall}% of your classes' overall assigned coursework.</p>
             <div class="button-row">
-              <button class="button button-primary" onclick="setPostLoginPage('courses')">Continue Learning</button>
-              <button class="button button-secondary" onclick="setPostLoginPage('courseDetail')">Open Course Detail</button>
-            </div>
+  <button class="button button-primary" onclick="setPostLoginPage('courses')">
+    ${courses.length ? "Continue Learning" : "Browse Available Courses"}
+  </button>
+
+  ${
+    courses.length
+      ? `<button class="button button-secondary" onclick="setPostLoginPage('courseDetail')">Open Course Detail</button>`
+      : ""
+  }
+</div>
           </div>
         </div>
       </div>
@@ -3598,15 +3614,19 @@ function homeView() {
       <div class="card">
         <h3>Course Progress</h3>
         <div class="course-progress-list">
-          ${courses
-            .map(
-              (course) => `
-              <div class="progress-row">
-                <span>${course.name}</span>
-                <strong>${course.progress}%</strong>
-              </div>`
-            )
-            .join("")}
+          ${
+  courses.length
+    ? courses
+        .map(
+          (course) => `
+          <div class="progress-row">
+            <span>${course.name}</span>
+            <strong>${Number(course.progress || 0)}%</strong>
+          </div>`
+        )
+        .join("")
+    : `<p class="muted">No active courses yet. Go to Courses, request a join code, then join a course to start progress tracking.</p>`
+}
         </div>
       </div>
 
