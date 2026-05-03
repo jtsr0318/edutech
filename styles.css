@@ -2758,6 +2758,63 @@ textarea {
   margin-bottom: 0.75rem;
 }
 
+.admin-forum-moderation-toolbar {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: start;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.admin-forum-reply-details {
+  min-width: 0;
+}
+
+.admin-forum-reply-summary {
+  list-style: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--section-soft);
+  color: inherit;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.admin-forum-reply-summary:hover {
+  background: var(--primary-soft);
+  border-color: color-mix(in srgb, var(--primary) 35%, var(--line));
+}
+
+.admin-forum-reply-summary::-webkit-details-marker {
+  display: none;
+}
+
+.admin-forum-reply-summary::marker {
+  content: "";
+}
+
+.admin-forum-reply-icon {
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.admin-forum-reply-panel {
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: var(--surface, #fff);
+}
+
+.admin-forum-delete-btn {
+  flex-shrink: 0;
+}
+
 .forum-thread-replies {
   margin-top: 1rem;
 }

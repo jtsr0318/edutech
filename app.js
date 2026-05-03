@@ -3385,13 +3385,22 @@ function adminPageContent() {
               <p class="muted">${escapeHtml(p.author || "Unknown")} · ${escapeHtml(p.tag || "General")}</p>
               <p class="muted forum-admin-post-snippet">${escapeHtml(String(p.content || "").slice(0, 220))}${String(p.content || "").length > 220 ? "…" : ""}</p>
               ${replies ? `<div class="forum-admin-replies">${replies}</div>` : ""}
-              <div class="field" style="margin-top:10px;">
-                <label>Admin reply</label>
-                <textarea class="admin-forum-reply-input" rows="2" placeholder="Official response visible to students…"></textarea>
-              </div>
-              <div class="button-row">
-                <button type="button" class="button button-primary" onclick="submitAdminForumReplyFromCard('${p.id}')">Post admin reply</button>
-                <button type="button" class="button button-secondary" onclick="deleteAdminForumPost('${p.id}')">Delete post</button>
+              <div class="admin-forum-moderation-toolbar">
+                <details class="admin-forum-reply-details">
+                  <summary class="admin-forum-reply-summary" title="Reply as admin" aria-label="Reply as admin">
+                    <span class="admin-forum-reply-icon" aria-hidden="true">💬</span>
+                  </summary>
+                  <div class="admin-forum-reply-panel">
+                    <div class="field">
+                      <label>Admin reply</label>
+                      <textarea class="admin-forum-reply-input" rows="3" placeholder="Official response visible to students…"></textarea>
+                    </div>
+                    <div class="button-row">
+                      <button type="button" class="button button-primary" onclick="submitAdminForumReplyFromCard('${p.id}')">Post admin reply</button>
+                    </div>
+                  </div>
+                </details>
+                <button type="button" class="button button-secondary admin-forum-delete-btn" onclick="deleteAdminForumPost('${p.id}')">Delete post</button>
               </div>
             </div>`;
           })
