@@ -180,6 +180,15 @@ function resolvePublicApiUrl(path) {
   return p;
 }
 
+/** HTML datetime-local values are wall-clock with no TZ; API compares with UTC. Convert to ISO (Z) or return empty. */
+function datetimeLocalToUtcIso(value) {
+  const v = String(value ?? "").trim();
+  if (!v) return "";
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return v;
+  return d.toISOString();
+}
+
 async function fetchAuthorizedBinary(apiPath) {
   const res = await fetch(`${API_BASE_URL}${apiPath}`, {
     headers: state.authToken ? { Authorization: `Bearer ${state.authToken}` } : {},
@@ -729,9 +738,16 @@ function toggleMobileNav() {
   render();
 }
 
-function setCourseTab(tab) {
+async function setCourseTab(tab) {
   state.courseTab = tab;
   if (state.isLoggedIn) persistSession();
+  if (state.authRole === "student" && tab === "Assignment" && state.isLoggedIn) {
+    try {
+      await loadDataDrivenCollections();
+    } catch (err) {
+      pushToast("error", err.message || "Failed to refresh assignments.");
+    }
+  }
   render();
 }
 
@@ -1069,7 +1085,7 @@ async function saveAdminMaterial() {
     const formData = new FormData();
     formData.append("name", materialName || selectedFile.name);
     formData.append("file", selectedFile);
-    formData.append("publishAt", String(state.adminMaterialForm.publishAt || "").trim());
+    formData.append("publishAt", datetimeLocalToUtcIso(state.adminMaterialForm.publishAt));
     const uploadRes = await apiRequest(`/admin/courses/${courseId}/materials`, { method: "POST", body: formData });
     const inlineComment = String(state.adminMaterialForm.commentText || "").trim();
     if (inlineComment && uploadRes?.item?.id) {
@@ -1100,7 +1116,7 @@ async function saveAdminAnnouncement() {
     const payload = {
       title: String(state.adminAnnouncementForm.title || "").trim(),
       text: String(state.adminAnnouncementForm.text || "").trim(),
-      publishAt: String(state.adminAnnouncementForm.publishAt || "").trim(),
+      publishAt: datetimeLocalToUtcIso(state.adminAnnouncementForm.publishAt),
     };
     if (!courseId || !payload.title || !payload.text) {
       pushToast("error", "Course, title, and announcement text are required.");
@@ -1123,8 +1139,8 @@ async function saveAdminAssignment() {
     const payload = {
       title: String(state.adminAssignmentForm.title || "").trim(),
       type: String(state.adminAssignmentForm.type || "short").trim(),
-      dueAt: String(state.adminAssignmentForm.dueAt || "").trim(),
-      publishAt: String(state.adminAssignmentForm.publishAt || "").trim(),
+      dueAt: datetimeLocalToUtcIso(state.adminAssignmentForm.dueAt),
+      publishAt: datetimeLocalToUtcIso(state.adminAssignmentForm.publishAt),
       rubricTemplate: String(state.adminAssignmentForm.rubricTemplate || "").trim(),
       timerSeconds: Number(state.adminAssignmentForm.timerSeconds || 0),
     };
