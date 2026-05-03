@@ -33,7 +33,6 @@ const state = {
     dueAt: "",
     publishAt: "",
     instructions: "",
-    rubricTemplate: "",
     timerSeconds: 60,
     quizQuestion: "",
     quizOptionA: "",
@@ -227,7 +226,7 @@ async function onStudentAssignmentUploadPick(assignmentId, input) {
     const fd = new FormData();
     fd.append("file", f);
     await apiRequest(`/assignments/${encodeURIComponent(id)}/student-upload`, { method: "POST", body: fd });
-    await loadDataDrivenCollections();
+    await refreshAssignmentsListOnly();
     pushToast("success", `文件已上传：${f.name}。需要交卷时请再点 Mark as Done。`);
     render();
   } catch (err) {
@@ -658,6 +657,23 @@ async function clearCartApi() {
   return apiRequest("/cart/items", { method: "DELETE" });
 }
 
+/** Refresh assignments + submission/quiz mirrors only (does not reload materials, forum, books, etc.). */
+async function refreshAssignmentsListOnly() {
+  const assignmentsRes = await fetchAssignments();
+  data.assignments = assignmentsRes.items || [];
+  state.assignmentSubmissions = Object.fromEntries(
+    (data.assignments || [])
+      .filter((item) => item.submission)
+      .map((item) => [item.id, item.submission])
+  );
+  state.quizHistoryByAssignment = Object.fromEntries(
+    (data.assignments || [])
+      .filter((item) => item.quizHistory)
+      .map((item) => [item.id, item.quizHistory])
+  );
+  if (state.isLoggedIn) persistSession();
+}
+
 async function loadDataDrivenCollections() {
   const [coursesRes, assignmentsRes, announcementsRes, materialsRes, commentsRes, forumRes, booksRes] = await Promise.all([
     fetchCourses(),
@@ -801,7 +817,7 @@ async function setCourseTab(tab) {
   if (state.isLoggedIn) persistSession();
   if (state.authRole === "student" && tab === "Assignment" && state.isLoggedIn) {
     try {
-      await loadDataDrivenCollections();
+      await refreshAssignmentsListOnly();
     } catch (err) {
       pushToast("error", err.message || "Failed to refresh assignments.");
     }
@@ -1200,7 +1216,7 @@ async function saveAdminAssignment() {
       dueAt: datetimeLocalToUtcIso(state.adminAssignmentForm.dueAt),
       publishAt: datetimeLocalToUtcIso(state.adminAssignmentForm.publishAt),
       instructions: String(state.adminAssignmentForm.instructions || "").trim(),
-      rubricTemplate: String(state.adminAssignmentForm.rubricTemplate || "").trim(),
+      rubricTemplate: "",
       timerSeconds: Number(state.adminAssignmentForm.timerSeconds || 0),
     };
     if (payload.type === "mcq") {
@@ -1236,7 +1252,7 @@ async function saveAdminAssignment() {
       fd.append("dueAt", payload.dueAt);
       fd.append("publishAt", payload.publishAt);
       fd.append("instructions", payload.instructions);
-      fd.append("rubricTemplate", payload.rubricTemplate);
+      fd.append("rubricTemplate", payload.rubricTemplate || "");
       fd.append("timerSeconds", String(payload.timerSeconds));
       if (payload.quizPayload) {
         fd.append("quizPayload", JSON.stringify(payload.quizPayload));
@@ -1266,7 +1282,6 @@ async function saveAdminAssignment() {
       dueAt: "",
       publishAt: "",
       instructions: "",
-      rubricTemplate: "",
       timerSeconds: 60,
       quizQuestion: "",
       quizOptionA: "",
@@ -1386,6 +1401,21 @@ function formatChatTime(input) {
   const date = new Date(input);
   if (Number.isNaN(date.getTime())) return String(input);
   return date.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/** Wall time in Malaysia (GMT+8) for assignment cards and related timestamps. */
+function formatMalaysiaDateTime(input) {
+  if (!input) return "";
+  const date = new Date(input);
+  if (Number.isNaN(date.getTime())) return String(input);
+  return date.toLocaleString("en-MY", {
+    timeZone: "Asia/Kuala_Lumpur",
+    year: "numeric",
     month: "short",
     day: "numeric",
     hour: "2-digit",
@@ -1776,7 +1806,6 @@ function logout() {
     dueAt: "",
     publishAt: "",
     instructions: "",
-    rubricTemplate: "",
     timerSeconds: 60,
     quizQuestion: "",
     quizOptionA: "",
@@ -2340,7 +2369,7 @@ async function submitMcqAnswer(assignmentId) {
     delete state.quizRetryMode[String(assignmentId)];
     addNotification("Quiz", `Score ${attempt.score || 0}/${attempt.total || 0}`);
     pushToast("success", `Quiz submitted. Score ${attempt.score || 0}/${attempt.total || 0}`);
-    await loadDataDrivenCollections();
+    await refreshAssignmentsListOnly();
     await refreshCourseProgress();
     render();
   } catch (err) {
@@ -2520,13 +2549,7 @@ async function postComment(key) {
 }
 
 function formatSubmittedTime(ts) {
-  return new Date(ts).toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatMalaysiaDateTime(ts);
 }
 
 async function submitAssignment(assignmentId, sourceLabel) {
@@ -2535,13 +2558,6 @@ async function submitAssignment(assignmentId, sourceLabel) {
   if (assignment.type === "short" && !String(state.shortAnswerDrafts[assignmentId] || "").trim()) {
     pushToast("error", "Please write your short answer before submitting.");
     return;
-  }
-  if (assignment.type === "upload") {
-    const su = assignment.studentUpload;
-    if (!su || !String(su.fileName || "").trim()) {
-      pushToast("error", "请先用 Upload 把文件传到服务器，再点 Mark as Done。");
-      return;
-    }
   }
   const label = String(sourceLabel || "").trim().slice(0, 100);
   try {
@@ -2560,6 +2576,7 @@ async function submitAssignment(assignmentId, sourceLabel) {
       item.isLate ? "info" : "success",
       `${assignment.title} submitted${item.isLate ? " (Late)" : ""}.`
     );
+    await refreshAssignmentsListOnly();
     await refreshCourseProgress();
     render();
   } catch (err) {
@@ -3080,7 +3097,6 @@ function adminPageContent() {
                                       <div class="field"><label>Due Date & Time</label><input type="datetime-local" value="${state.adminAssignmentForm.dueAt}" oninput="updateAdminAssignmentForm('dueAt', this.value)" /></div>
                                       <div class="field"><label>Publish At (optional)</label><input type="datetime-local" value="${state.adminAssignmentForm.publishAt || ""}" oninput="updateAdminAssignmentForm('publishAt', this.value)" /></div>
                                       <div class="field" style="grid-column:1 / -1;"><label>Instructions for students (optional)</label><textarea placeholder="What students should read before starting..." oninput="updateAdminAssignmentForm('instructions', this.value)">${state.adminAssignmentForm.instructions || ""}</textarea></div>
-                                      <div class="field" style="grid-column:1 / -1;"><label>Rubric / marking criteria (optional)</label><textarea placeholder="Criteria, marks, and expectations..." oninput="updateAdminAssignmentForm('rubricTemplate', this.value)">${state.adminAssignmentForm.rubricTemplate || ""}</textarea></div>
                                       ${
                                         state.adminAssignmentForm.type === "mcq"
                                           ? `<div class="field"><label>Quiz Timer (seconds)</label><input type="number" min="10" value="${state.adminAssignmentForm.timerSeconds || 60}" oninput="updateAdminAssignmentForm('timerSeconds', this.value)" /></div>
@@ -3707,7 +3723,7 @@ function coursesView() {
 
 function assignmentClassroomHeader(assignment) {
   const lecturer = escapeHtml(data.lecturer?.name || "Instructor");
-  const posted = escapeHtml(formatChatTime(assignment.publishAt || assignment.createdAt) || "—");
+  const posted = escapeHtml(formatMalaysiaDateTime(assignment.createdAt) || "—");
   const dueLine = escapeHtml(assignment.due || "No due date");
   const typeLabel = escapeHtml(String(assignment.type || "").toUpperCase());
   return `<div class="assignment-classroom-head">
@@ -3798,16 +3814,12 @@ function renderAssignmentWorkCard(assignment) {
   const strip = assignmentTeacherStrip(assignment, locked);
   const subLine = assignment.type === "mcq" ? "" : assignmentSubmissionLineCard(submission);
   const discuss = commentsBlockEmbedded(key, "assignment", assignment.id);
-  const rubricLine =
-    assignment.rubricTemplate && String(assignment.rubricTemplate).trim()
-      ? `<div class="assignment-classroom-rubric muted"><strong>Rubric</strong><p>${escapeHtml(String(assignment.rubricTemplate))}</p></div>`
-      : "";
 
   if (assignment.type === "upload") {
     const su = assignment.studentUpload;
     const uploadedHint =
       su && String(su.fileName || "").trim()
-        ? `<div class="muted assignment-upload-pick"><span>Uploaded: <strong>${escapeHtml(su.fileName)}</strong>${su.updatedAt ? ` · ${escapeHtml(formatChatTime(su.updatedAt) || "")}` : ""}</span>
+        ? `<div class="muted assignment-upload-pick"><span>Uploaded: <strong>${escapeHtml(su.fileName)}</strong>${su.updatedAt ? ` · ${escapeHtml(formatMalaysiaDateTime(su.updatedAt) || "")}` : ""}</span>
         <button type="button" class="button button-secondary" onclick="downloadMyStudentAssignmentUpload('${assignment.id}', ${JSON.stringify(su.fileName)})">Download my file</button></div>`
         : "";
     return `<article class="card course-tab-card assignment-classroom-card">
@@ -3897,11 +3909,10 @@ function renderAssignmentWorkCard(assignment) {
       </div>
       ${
         latestAttempt?.createdAt
-          ? `<p class="muted">Last score: ${latestAttempt.score}/${latestAttempt.total} · ${formatChatTime(latestAttempt.createdAt)}</p>`
+          ? `<p class="muted">Last score: ${latestAttempt.score}/${latestAttempt.total} · ${formatMalaysiaDateTime(latestAttempt.createdAt)}</p>`
           : ""
       }
       ${strip}
-      ${rubricLine}
       ${subLine}
       ${discuss}
     </article>`;
@@ -3911,7 +3922,6 @@ function renderAssignmentWorkCard(assignment) {
     ${header}
     ${instr}
     ${strip}
-    ${rubricLine}
     <p class="muted">Write your answer below, then submit.</p>
     <textarea class="assignment-classroom-textarea" placeholder="Type your answer here." ${locked ? "disabled " : ""}oninput="updateShortAnswerDraft('${assignment.id}', this.value)">${state.shortAnswerDrafts[assignment.id] || ""}</textarea>
     <div class="assignment-classroom-actions">
