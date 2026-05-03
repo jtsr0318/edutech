@@ -3613,6 +3613,13 @@ function coursesView() {
   `;
 }
 
+function assignmentTypeLabel(t) {
+  const x = String(t || "").toLowerCase();
+  if (x === "mcq") return "Quiz";
+  if (x === "upload") return "Upload";
+  return "Short answer";
+}
+
 function assignmentOverviewView() {
   const selectedCourseObj = data.courses.find((c) => c.name === state.selectedCourse);
   const selectedCourseId = selectedCourseObj?.id != null ? String(selectedCourseObj.id) : null;
@@ -3620,80 +3627,112 @@ function assignmentOverviewView() {
     ? (data.assignments || []).filter((a) => String(a.courseId) === selectedCourseId)
     : [];
   if (!courseAssignments.length) {
-    return `<article class="card course-tab-card"><p class="muted">No assignments yet. Admin has not uploaded any assignment for this course.</p></article>`;
+    return `<p class="muted assignment-empty">No assignments for this course yet.</p>`;
   }
   return `
+    <div class="assignment-list-flow">
     ${courseAssignments
-      .map(
-        (assignment) => {
-          const submission = state.assignmentSubmissions[assignment.id];
-          return `
-      <article class="card course-tab-card">
-        <div class="split">
-          <div>
-            <strong>${escapeHtml(assignment.title || "")}</strong>
-            <p class="muted file-meta">Type: ${assignment.type.toUpperCase()}${
-              assignment.publishAt || assignment.createdAt
-                ? ` · Posted ${escapeHtml(formatChatTime(assignment.publishAt || assignment.createdAt))}`
-                : ""
-            }</p>
+      .map((assignment) => {
+        const submission = state.assignmentSubmissions[assignment.id];
+        const open = !!state.assignmentOpen[assignment.id];
+        const subHint = submission
+          ? `<span class="assignment-compact-status ${submission.isLate ? "is-late" : ""}">${submission.isLate ? "Submitted late" : "Submitted"} · ${formatSubmittedTime(submission.submittedAt)}</span>`
+          : "";
+        return `
+      <article class="assignment-shell">
+        <div class="assignment-shell-summary">
+          <div class="assignment-shell-summary-main">
+            <span class="assignment-shell-title">${escapeHtml(assignment.title || "")}</span>
+            <span class="muted assignment-shell-due">Due ${escapeHtml(assignment.due || "")}</span>
+            ${assignment.isPublished === false ? `<span class="assignment-badge-muted">Scheduled</span>` : ""}
+            ${subHint}
           </div>
-          <div class="split" style="gap:0.5rem;align-items:center;flex-wrap:wrap;">
-            ${assignment.isPublished === false ? `<span class="pill" style="background:#e8e8f0;color:#444;">Scheduled</span>` : ""}
-            <span class="pill pill-amber">due ${assignment.due}</span>
-          </div>
+          <button type="button" class="assignment-expand" onclick="toggleAssignment('${assignment.id}')">${open ? "Hide" : "Open"}</button>
         </div>
-        ${
-          submission
-            ? `<div class="assignment-status ${submission.isLate ? "assignment-status-late" : "assignment-status-on-time"}">
-                <strong>${submission.isLate ? "Submitted Late" : "Submitted"}</strong>
-                <span>${formatSubmittedTime(submission.submittedAt)}</span>
-              </div>`
-            : ""
-        }
-        <button class="button button-secondary" onclick="toggleAssignment('${assignment.id}')">${state.assignmentOpen[assignment.id] ? "Collapse" : "Expand"}</button>
-        <div class="${state.assignmentOpen[assignment.id] ? "" : "hidden"} assignment-detail">
+        <div class="${open ? "assignment-detail assignment-detail-flow" : "assignment-detail assignment-detail-flow hidden"}">
           ${renderAssignmentBody(assignment)}
         </div>
-      </article>
-    `;
-        }
-      )
+      </article>`;
+      })
       .join("")}
-  `;
+    </div>`;
 }
 
-function assignmentInstructionsFromAdmin(assignment) {
+function renderAssignmentFlowHeader(assignment) {
+  const lecturer = escapeHtml(data.lecturer?.name || "Instructor");
+  const posted = escapeHtml(formatChatTime(assignment.publishAt || assignment.createdAt) || "");
+  const dueLabel = escapeHtml(assignment.due || "No due date");
+  const kind = escapeHtml(assignmentTypeLabel(assignment.type));
+  const meta = `${lecturer} · ${kind}${posted ? ` · Posted ${posted}` : ""} · Due ${dueLabel}`;
+  return `<h3 class="assignment-flow-title">${escapeHtml(assignment.title || "")}</h3>
+    <p class="assignment-flow-meta muted">${meta}</p>`;
+}
+
+function assignmentInstructionsBlock(assignment) {
   const text = String(assignment.instructions || "").trim();
   if (!text) return "";
-  return `<div class="card assignment-admin-instructions"><h4>Assignment instructions</h4><div class="muted" style="white-space:pre-wrap;">${escapeHtml(text)}</div></div>`;
+  return `<div class="assignment-desc">${escapeHtml(text)}</div>`;
+}
+
+function assignmentTeacherAttachmentRow(assignment, locked) {
+  const attPath = assignment.attachmentPath || assignment.attachment_path;
+  if (!attPath) return "";
+  const attHref = resolvePublicApiUrl(attPath);
+  if (locked) {
+    return `<div class="assignment-attachment-row muted">Teacher file — available when published</div>`;
+  }
+  if (attPath.startsWith("/api/assignments/")) {
+    return `<div class="assignment-attachment-row">
+      <span class="assignment-attachment-icon" aria-hidden="true">📎</span>
+      <button type="button" class="assignment-text-link" onclick="openAssignmentAttachment('${assignment.id}')">Teacher file — preview</button>
+    </div>`;
+  }
+  return `<div class="assignment-attachment-row">
+    <span class="assignment-attachment-icon" aria-hidden="true">📎</span>
+    <a class="assignment-text-link" href="${escapeHtml(attHref)}" target="_blank" rel="noopener noreferrer">Teacher file — open</a>
+  </div>`;
+}
+
+function assignmentSubmissionLine(submission) {
+  if (!submission) return "";
+  return `<p class="assignment-done-line muted">${submission.isLate ? "Submitted late" : "Submitted"} · ${formatSubmittedTime(submission.submittedAt)}${submission.sourceLabel ? ` · ${escapeHtml(submission.sourceLabel)}` : ""}</p>`;
+}
+
+function assignmentCommentsFlow(key, contentType, contentId) {
+  const postedComments = getContentComments(contentType, contentId);
+  return `
+    <div class="assignment-comments-flow">
+      <h4 class="assignment-comments-heading">Discussion</h4>
+      <div class="assignment-comment-thread">
+        ${postedComments
+          .map(
+            (c) => `
+          <div class="assignment-comment-line">
+            <span class="assignment-comment-author">${escapeHtml(c.authorName || "User")}</span>
+            <span class="assignment-comment-text">${escapeHtml(c.text)}</span>
+            <span class="muted assignment-comment-time">${formatChatTime(c.createdAt)}</span>
+          </div>`
+          )
+          .join("") || `<p class="muted assignment-comment-empty">No comments yet.</p>`}
+      </div>
+      <div class="assignment-comment-compose">
+        <input type="text" class="assignment-comment-input" placeholder="Add a comment" value="${state.commentDrafts[key] || ""}" oninput="updateCommentDraft('${key}', this.value)" />
+        <button type="button" class="button button-secondary compact-btn" onclick="postComment('${key}')">Post</button>
+      </div>
+    </div>`;
 }
 
 function renderAssignmentBody(assignment) {
   const submission = state.assignmentSubmissions[assignment.id];
   const locked = assignment.isPublished === false;
-  const lockBanner = locked
-    ? `<div class="card"><p class="muted"><strong>尚未发布。</strong>到达发布时间后可下载教师附件并提交；列表中可先看到作业标题与截止时间。</p></div>`
+  const lockLine = locked
+    ? `<p class="assignment-notice muted">Not published yet — attachment and submission unlock at publish time.</p>`
     : "";
-  const adminInstr = assignmentInstructionsFromAdmin(assignment);
-  const attPath = assignment.attachmentPath || assignment.attachment_path;
-  const attHref = resolvePublicApiUrl(attPath);
-  let teacherAttachment = "";
-  if (attPath) {
-    if (locked) {
-      teacherAttachment = `<div class="card"><h4>Teacher attachment</h4><p class="muted">发布后可预览。</p></div>`;
-    } else if (attPath.startsWith("/api/assignments/")) {
-      teacherAttachment = `<div class="card"><h4>Teacher attachment</h4><p><button type="button" class="button button-secondary" onclick="openAssignmentAttachment('${assignment.id}')">Preview attachment (new tab)</button></p></div>`;
-    } else {
-      teacherAttachment = `<div class="card"><h4>Teacher attachment</h4><p><a class="button button-secondary" href="${escapeHtml(attHref)}" target="_blank" rel="noopener noreferrer">Preview / download</a></p></div>`;
-    }
-  }
-  const submissionReceipt = submission
-    ? `<div class="submission-receipt ${submission.isLate ? "submission-receipt-late" : "submission-receipt-ok"}">
-         <strong>${submission.isLate ? "Submitted Late" : "Submitted Successfully"}</strong>
-         <p class="muted">Time: ${formatSubmittedTime(submission.submittedAt)} · Via ${submission.sourceLabel}</p>
-       </div>`
-    : "";
+  const header = renderAssignmentFlowHeader(assignment);
+  const instr = assignmentInstructionsBlock(assignment);
+  const attachRow = assignmentTeacherAttachmentRow(assignment, locked);
+  const subLine = assignmentSubmissionLine(submission);
+  const discuss = assignmentCommentsFlow(`${assignment.id}-comments`, "assignment", assignment.id);
 
   if (assignment.type === "mcq") {
     const payload = assignment.quizPayload && Array.isArray(assignment.quizPayload.questions) ? assignment.quizPayload : { questions: [] };
@@ -3703,104 +3742,92 @@ function renderAssignmentBody(assignment) {
     const elapsed = startedAt ? Math.floor((state.quizTimerNow - startedAt) / 1000) : 0;
     const remaining = timerSeconds > 0 ? Math.max(timerSeconds - elapsed, 0) : 0;
     const latestAttempt = state.quizHistoryByAssignment[assignment.id];
-    return `
-      ${adminInstr}
-      ${lockBanner}
-      <div class="assignment-instruction">
-        <strong>How to complete</strong>
-        <p class="muted">Complete all MCQ questions and submit before the timer ends (if any).</p>
-      </div>
+    const questionsHtml =
+      questions.length > 0
+        ? questions
+            .map((q, idx) => {
+              const qid = String(q.id || `q${idx + 1}`);
+              const selected = (state.quizDraftAnswers[assignment.id] || {})[qid];
+              return `<div class="assignment-mcq-block">
+                <strong class="assignment-mcq-qtitle">Q${idx + 1}. ${escapeHtml(q.question || "")}</strong>
+                <div class="option-grid assignment-option-grid">
+                  ${(q.options || [])
+                    .map(
+                      (opt) =>
+                        locked
+                          ? `<button type="button" class="option-btn" disabled>${escapeHtml(opt)}</button>`
+                          : `<button type="button" class="option-btn ${selected === opt ? "option-btn-selected" : ""}" onclick="selectMcqOption('${assignment.id}', '${qid}', '${String(opt).replace(/'/g, "\\'")}')">${escapeHtml(opt)}</button>`
+                    )
+                    .join("")}
+                </div>
+                ${latestAttempt?.createdAt ? `<p class="muted assignment-mcq-expl">${escapeHtml(q.explanation || "")}</p>` : ""}
+              </div>`;
+            })
+            .join("")
+        : `<p class="muted">No quiz questions configured.</p>`;
+    return `<div class="assignment-flow">
+      ${header}
+      ${lockLine}
+      ${instr}
+      ${attachRow}
       ${
         timerSeconds > 0
-          ? `<p class="muted"><strong>Timer:</strong> ${remaining}s ${startedAt ? "" : "(starts when you choose first option)"}</p>`
+          ? `<p class="muted assignment-timer">Timer: ${remaining}s${startedAt ? "" : " (starts on first answer)"}</p>`
           : ""
       }
-      ${
-        questions.length
-          ? questions
-              .map((q, idx) => {
-                const qid = String(q.id || `q${idx + 1}`);
-                const selected = (state.quizDraftAnswers[assignment.id] || {})[qid];
-                return `<div class="card">
-                  <strong>Q${idx + 1}. ${q.question || ""}</strong>
-                  <div class="option-grid">
-                    ${(q.options || [])
-                      .map(
-                        (opt) =>
-                          locked
-                            ? `<button type="button" class="option-btn" disabled>${opt}</button>`
-                            : `<button type="button" class="option-btn ${selected === opt ? "option-btn-selected" : ""}" onclick="selectMcqOption('${assignment.id}', '${qid}', '${String(opt).replace(/'/g, "\\'")}')">${opt}</button>`
-                      )
-                      .join("")}
-                  </div>
-                  ${latestAttempt?.createdAt ? `<p class="muted">Explanation: ${q.explanation || "No explanation provided."}</p>` : ""}
-                </div>`;
-              })
-              .join("")
-          : `<p class="muted">Quiz questions are not configured yet by admin.</p>`
-      }
-      ${
-        locked
-          ? `<p class="muted">测验提交将在作业发布后开放。</p>`
-          : `<button class="button button-primary" onclick="submitMcqAnswer('${assignment.id}')">Submit Quiz</button>`
-      }
+      ${questionsHtml}
+      <div class="assignment-actions">
+        ${
+          locked
+            ? `<span class="muted">Quiz locked until published.</span>`
+            : `<button type="button" class="button button-primary" onclick="submitMcqAnswer('${assignment.id}')">Submit quiz</button>`
+        }
+      </div>
       ${
         latestAttempt?.createdAt
-          ? `<p class="muted"><strong>Latest score:</strong> ${latestAttempt.score}/${latestAttempt.total} · ${formatChatTime(latestAttempt.createdAt)}</p>`
+          ? `<p class="muted assignment-score-line">Last score: ${latestAttempt.score}/${latestAttempt.total} · ${formatChatTime(latestAttempt.createdAt)}</p>`
           : ""
       }
-      ${teacherAttachment}
-      ${submissionReceipt}
-      ${commentsBlock(`${assignment.id}-comments`, "assignment", assignment.id)}
-    `;
+      ${subLine}
+      ${discuss}
+    </div>`;
   }
 
   if (assignment.type === "upload") {
-    return `
-      ${adminInstr}
-      ${lockBanner}
-      <div class="assignment-instruction">
-        <strong>How to complete</strong>
-        <p class="muted">Upload your project package and mark as done when your files are ready.</p>
+    return `<div class="assignment-flow">
+      ${header}
+      ${lockLine}
+      ${instr}
+      ${attachRow}
+      <div class="assignment-actions">
+        ${
+          locked
+            ? `<span class="muted">Submission locked until published.</span>`
+            : `<button type="button" class="button button-primary" onclick="submitAssignment('${assignment.id}', 'Upload file')">Upload</button>
+        <button type="button" class="button button-secondary" onclick="submitAssignment('${assignment.id}', 'Mark as Done')">Mark as Done</button>`
+        }
       </div>
-      <div class="card">
-        <h4>Your submission</h4>
-        <div class="item">project-demo.mp4</div>
-        <div class="item">index.html</div>
-        <div class="item"><a href="sample-materials/group-formation-namelist.xls" target="_blank" rel="noopener noreferrer">Open attached resource (XLS)</a></div>
-        <div class="button-row">
-          ${
-            locked
-              ? `<p class="muted">提交将在作业发布后开放。</p>`
-              : `<button class="button button-primary" onclick="submitAssignment('${assignment.id}', 'Upload file')">Upload</button>
-          <button class="button button-secondary" onclick="submitAssignment('${assignment.id}', 'Mark as Done')">Mark as Done</button>`
-          }
-        </div>
-      </div>
-      ${teacherAttachment}
-      ${submissionReceipt}
-      ${commentsBlock(`${assignment.id}-comments`, "assignment", assignment.id)}
-    `;
+      ${subLine}
+      ${discuss}
+    </div>`;
   }
 
-  return `
-    ${adminInstr}
-    ${lockBanner}
-    ${teacherAttachment}
-    <div class="assignment-instruction">
-      <strong>How to complete</strong>
-      <p class="muted">Write your answer in the box below and submit when complete.</p>
+  return `<div class="assignment-flow">
+    ${header}
+    ${lockLine}
+    ${instr}
+    ${attachRow}
+    <textarea class="assignment-textarea" placeholder="Your answer" ${locked ? "disabled " : ""}oninput="updateShortAnswerDraft('${assignment.id}', this.value)">${state.shortAnswerDrafts[assignment.id] || ""}</textarea>
+    <div class="assignment-actions">
+      ${
+        locked
+          ? `<span class="muted">Submission locked until published.</span>`
+          : `<button type="button" class="button button-primary" onclick="submitAssignment('${assignment.id}', 'Short answer submission')">Submit</button>`
+      }
     </div>
-    <p>What did you learn today? Write down your review here.</p>
-    <textarea placeholder="Type your answer here." ${locked ? "disabled " : ""}oninput="updateShortAnswerDraft('${assignment.id}', this.value)">${state.shortAnswerDrafts[assignment.id] || ""}</textarea>
-    ${
-      locked
-        ? `<p class="muted">提交将在作业发布后开放。</p>`
-        : `<button class="button button-primary" onclick="submitAssignment('${assignment.id}', 'Short answer submission')">Submit</button>`
-    }
-    ${submissionReceipt}
-    ${commentsBlock(`${assignment.id}-comments`, "assignment", assignment.id)}
-  `;
+    ${subLine}
+    ${discuss}
+  </div>`;
 }
 
 function commentsBlock(key, contentType, contentId) {
