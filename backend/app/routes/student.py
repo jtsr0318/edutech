@@ -95,6 +95,22 @@ def _to_float(val):
     return val
 
 
+def _assignment_publish_blocks_student(assignment: Assignment, now: datetime) -> bool:
+    """True if a student must not access submission / attachment yet (scheduled publish)."""
+    if _is_admin_user():
+        return False
+    return bool(assignment.publish_at and assignment.publish_at > now)
+
+
+def _safe_quiz_payload_json(raw):
+    if not raw or not str(raw).strip():
+        return None
+    try:
+        return json.loads(raw)
+    except Exception:
+        return None
+
+
 def _forum_payload(row: ForumPost):
     return {
         "id": row.id,
@@ -315,8 +331,8 @@ def list_assignments():
             db.and_(Submission.assignment_id == Assignment.id, Submission.user_id == g.current_user.id),
         )
     )
-    if not _is_admin_user():
-        q = q.filter(db.or_(Assignment.publish_at.is_(None), Assignment.publish_at <= now))
+    # Do not hide scheduled assignments from the list (matches materials UX; avoids TZ / bad publish_at data).
+    # Enforce publish_at on submit, quiz submit, and attachment download only.
     if eids is not None:
         q = q.filter(Assignment.course_id.in_(eids))
     rows = q.order_by(Assignment.created_at.asc()).all()
@@ -343,7 +359,8 @@ def list_assignments():
                 "due": row.due_at.strftime("%d %b, %I.%M%p") if row.due_at else "No due date",
                 "rubricTemplate": row.rubric_template or "",
                 "timerSeconds": int(row.timer_seconds or 0),
-                "quizPayload": (json.loads(row.quiz_payload) if row.quiz_payload else None),
+                "quizPayload": _safe_quiz_payload_json(row.quiz_payload),
+                "isPublished": bool(row.publish_at is None or row.publish_at <= now),
                 "quizHistory": (
                     {
                         "score": int(latest_attempt_by_assignment[row.id].score or 0),
@@ -457,6 +474,9 @@ def download_assignment_attachment(assignment_id):
         return {"message": "Not found"}, 404
     if not _is_admin_user() and row.course_id not in _enrolled_course_ids(g.current_user.id):
         return {"message": "Forbidden"}, 403
+    now = datetime.utcnow()
+    if _assignment_publish_blocks_student(row, now):
+        return {"message": "Assignment is not published yet."}, 403
     blob = row.attachment_blob
     if blob:
         name = f"{row.title or 'assignment'}-attachment"
@@ -538,6 +558,8 @@ def submit_assignment(assignment_id):
     if not _is_admin_user() and assignment.course_id not in _enrolled_course_ids(g.current_user.id):
         return {"message": "Not enrolled in this course."}, 403
     submitted_at = datetime.utcnow()
+    if _assignment_publish_blocks_student(assignment, submitted_at):
+        return {"message": "Assignment is not published yet."}, 403
     is_late = bool(assignment.due_at and submitted_at > assignment.due_at)
     status = "late" if is_late else "submitted"
     source_label = (body.get("sourceLabel") or "").strip()
@@ -577,9 +599,12 @@ def submit_quiz(assignment_id):
         return {"message": "Assignment not found."}, 404
     if not _is_admin_user() and assignment.course_id not in _enrolled_course_ids(g.current_user.id):
         return {"message": "Not enrolled in this course."}, 403
+    now = datetime.utcnow()
+    if _assignment_publish_blocks_student(assignment, now):
+        return {"message": "Assignment is not published yet."}, 403
     if assignment.type != "mcq":
         return {"message": "Quiz submission only supports mcq assignments."}, 400
-    payload = json.loads(assignment.quiz_payload) if assignment.quiz_payload else {}
+    payload = _safe_quiz_payload_json(assignment.quiz_payload) or {}
     questions = payload.get("questions") if isinstance(payload, dict) else []
     if not questions:
         return {"message": "No quiz questions configured."}, 400

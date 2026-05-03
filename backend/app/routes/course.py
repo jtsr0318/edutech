@@ -1,6 +1,5 @@
 from flask import Blueprint, g
 from sqlalchemy import func
-from datetime import datetime
 
 from ..auth import require_auth
 from ..extensions import db
@@ -20,15 +19,10 @@ def course_progress(course_id):
     if not course:
         return {"message": "Course not found."}, 404
 
-    now = datetime.utcnow()
-    total_assignments = Assignment.query.filter(Assignment.course_id == course.id, db.or_(Assignment.publish_at.is_(None), Assignment.publish_at <= now)).count()
+    total_assignments = Assignment.query.filter(Assignment.course_id == course.id).count()
     completed_assignments = (
         Submission.query.join(Assignment, Submission.assignment_id == Assignment.id)
-        .filter(
-            Submission.user_id == g.current_user.id,
-            Assignment.course_id == course.id,
-            db.or_(Assignment.publish_at.is_(None), Assignment.publish_at <= now),
-        )
+        .filter(Submission.user_id == g.current_user.id, Assignment.course_id == course.id)
         .with_entities(func.count(Submission.id))
         .scalar()
         or 0

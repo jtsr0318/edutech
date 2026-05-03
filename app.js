@@ -3642,7 +3642,10 @@ function assignmentOverviewView() {
             <strong>${assignment.title}</strong>
             <p class="muted file-meta">Type: ${assignment.type.toUpperCase()}</p>
           </div>
-          <span class="pill pill-amber">due ${assignment.due}</span>
+          <div class="split" style="gap:0.5rem;align-items:center;flex-wrap:wrap;">
+            ${assignment.isPublished === false ? `<span class="pill" style="background:#e8e8f0;color:#444;">Scheduled</span>` : ""}
+            <span class="pill pill-amber">due ${assignment.due}</span>
+          </div>
         </div>
         ${
           submission
@@ -3666,13 +3669,22 @@ function assignmentOverviewView() {
 
 function renderAssignmentBody(assignment) {
   const submission = state.assignmentSubmissions[assignment.id];
+  const locked = assignment.isPublished === false;
+  const lockBanner = locked
+    ? `<div class="card"><p class="muted"><strong>尚未发布。</strong>到达发布时间后可下载教师附件并提交；列表中可先看到作业标题与截止时间。</p></div>`
+    : "";
   const attPath = assignment.attachmentPath || assignment.attachment_path;
   const attHref = resolvePublicApiUrl(attPath);
-  const teacherAttachment = attPath
-    ? attPath.startsWith("/api/assignments/")
-      ? `<div class="card"><h4>Teacher file</h4><p><button type="button" class="button button-secondary" onclick="openAssignmentAttachment('${assignment.id}')">Open / download in new tab</button></p></div>`
-      : `<div class="card"><h4>Teacher file</h4><p><a class="button button-secondary" href="${escapeHtml(attHref)}" target="_blank" rel="noopener noreferrer">Download attachment</a></p></div>`
-    : "";
+  let teacherAttachment = "";
+  if (attPath) {
+    if (locked) {
+      teacherAttachment = `<div class="card"><h4>Teacher file</h4><p class="muted">发布后可用。</p></div>`;
+    } else if (attPath.startsWith("/api/assignments/")) {
+      teacherAttachment = `<div class="card"><h4>Teacher file</h4><p><button type="button" class="button button-secondary" onclick="openAssignmentAttachment('${assignment.id}')">Open / download in new tab</button></p></div>`;
+    } else {
+      teacherAttachment = `<div class="card"><h4>Teacher file</h4><p><a class="button button-secondary" href="${escapeHtml(attHref)}" target="_blank" rel="noopener noreferrer">Download attachment</a></p></div>`;
+    }
+  }
   const rubricBlock = assignment.rubricTemplate
     ? `<div class="card"><h4>Rubric</h4><p class="muted">${assignment.rubricTemplate}</p></div>`
     : "";
@@ -3692,6 +3704,7 @@ function renderAssignmentBody(assignment) {
     const remaining = timerSeconds > 0 ? Math.max(timerSeconds - elapsed, 0) : 0;
     const latestAttempt = state.quizHistoryByAssignment[assignment.id];
     return `
+      ${lockBanner}
       <div class="assignment-instruction">
         <strong>Instructions</strong>
         <p class="muted">Complete all MCQ questions and submit before timer ends.</p>
@@ -3712,7 +3725,10 @@ function renderAssignmentBody(assignment) {
                   <div class="option-grid">
                     ${(q.options || [])
                       .map(
-                        (opt) => `<button class="option-btn ${selected === opt ? "option-btn-selected" : ""}" onclick="selectMcqOption('${assignment.id}', '${qid}', '${String(opt).replace(/'/g, "\\'")}')">${opt}</button>`
+                        (opt) =>
+                          locked
+                            ? `<button type="button" class="option-btn" disabled>${opt}</button>`
+                            : `<button type="button" class="option-btn ${selected === opt ? "option-btn-selected" : ""}" onclick="selectMcqOption('${assignment.id}', '${qid}', '${String(opt).replace(/'/g, "\\'")}')">${opt}</button>`
                       )
                       .join("")}
                   </div>
@@ -3722,7 +3738,11 @@ function renderAssignmentBody(assignment) {
               .join("")
           : `<p class="muted">Quiz questions are not configured yet by admin.</p>`
       }
-      <button class="button button-primary" onclick="submitMcqAnswer('${assignment.id}')">Submit Quiz</button>
+      ${
+        locked
+          ? `<p class="muted">测验提交将在作业发布后开放。</p>`
+          : `<button class="button button-primary" onclick="submitMcqAnswer('${assignment.id}')">Submit Quiz</button>`
+      }
       ${
         latestAttempt?.createdAt
           ? `<p class="muted"><strong>Latest score:</strong> ${latestAttempt.score}/${latestAttempt.total} · ${formatChatTime(latestAttempt.createdAt)}</p>`
@@ -3737,6 +3757,7 @@ function renderAssignmentBody(assignment) {
 
   if (assignment.type === "upload") {
     return `
+      ${lockBanner}
       <div class="assignment-instruction">
         <strong>Instructions</strong>
         <p class="muted">Upload your project package and mark as done once final files are ready.</p>
@@ -3747,8 +3768,12 @@ function renderAssignmentBody(assignment) {
         <div class="item">index.html</div>
         <div class="item"><a href="sample-materials/group-formation-namelist.xls" target="_blank" rel="noopener noreferrer">Open attached resource (XLS)</a></div>
         <div class="button-row">
-          <button class="button button-primary" onclick="submitAssignment('${assignment.id}', 'Upload file')">Upload</button>
-          <button class="button button-secondary" onclick="submitAssignment('${assignment.id}', 'Mark as Done')">Mark as Done</button>
+          ${
+            locked
+              ? `<p class="muted">提交将在作业发布后开放。</p>`
+              : `<button class="button button-primary" onclick="submitAssignment('${assignment.id}', 'Upload file')">Upload</button>
+          <button class="button button-secondary" onclick="submitAssignment('${assignment.id}', 'Mark as Done')">Mark as Done</button>`
+          }
         </div>
       </div>
       ${teacherAttachment}
@@ -3759,14 +3784,19 @@ function renderAssignmentBody(assignment) {
   }
 
   return `
+    ${lockBanner}
     ${teacherAttachment}
     <div class="assignment-instruction">
       <strong>Instructions</strong>
       <p class="muted">Write a short reflection and submit when complete.</p>
     </div>
     <p>What did you learn today? Write down your review here.</p>
-    <textarea placeholder="Type your answer here." oninput="updateShortAnswerDraft('${assignment.id}', this.value)">${state.shortAnswerDrafts[assignment.id] || ""}</textarea>
-    <button class="button button-primary" onclick="submitAssignment('${assignment.id}', 'Short answer submission')">Submit</button>
+    <textarea placeholder="Type your answer here." ${locked ? "disabled " : ""}oninput="updateShortAnswerDraft('${assignment.id}', this.value)">${state.shortAnswerDrafts[assignment.id] || ""}</textarea>
+    ${
+      locked
+        ? `<p class="muted">提交将在作业发布后开放。</p>`
+        : `<button class="button button-primary" onclick="submitAssignment('${assignment.id}', 'Short answer submission')">Submit</button>`
+    }
     ${rubricBlock}
     ${submissionReceipt}
     ${commentsBlock(`${assignment.id}-comments`, "assignment", assignment.id)}
