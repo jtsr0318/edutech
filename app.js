@@ -1772,6 +1772,34 @@ async function submitJoinCourseByCode() {
   }
 }
 
+async function requestCourseCode(courseName) {
+  const name = String(courseName || "").trim();
+  if (!name) {
+    pushToast("error", "Invalid course name.");
+    return;
+  }
+
+  const message = `Hi Admin, I would like to request the join code for ${name}.`;
+
+  try {
+    await apiRequest("/chat/me", {
+      method: "POST",
+      body: { message },
+    });
+
+    state.supportDraft = "";
+    await loadStudentChat();
+
+    state.chatState.isOpen = true;
+    state.chatState.unreadCount = 0;
+
+    pushToast("success", `Request sent to admin for ${name}.`);
+    render();
+  } catch (err) {
+    pushToast("error", err.message || "Failed to request course code.");
+  }
+}
+
 async function copyJoinCodeToClipboard(code) {
   const c = String(code || "").trim();
   if (!c) return;
