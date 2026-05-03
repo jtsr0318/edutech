@@ -46,6 +46,7 @@ const state = {
   adminStudioTab: "materials",
   adminBookSearch: "",
   adminBookForm: { id: "", title: "", price: 0, country: "", area: "", type: "", category: "", description: "", image: "", stock: 0 },
+  adminBookShowStorefrontPreview: false,
   supportLoading: false,
   supportError: "",
   supportMessages: [],
@@ -1355,6 +1356,90 @@ async function deleteAdminCourse(id) {
 
 function updateAdminBookForm(key, value) {
   state.adminBookForm[key] = value;
+  if (state.page === "admin" && state.adminPage === "books") {
+    if (key === "image" || state.adminBookShowStorefrontPreview) {
+      syncAdminBookEditorPreviewsDOM();
+    }
+  }
+}
+
+function adminBookCatalogRowHtml(b) {
+  const thumb = b.image
+    ? `<img src="${escapeHtml(resolvePublicApiUrl(b.image))}" alt="" class="admin-book-thumb" />`
+    : `<div class="admin-book-thumb admin-book-thumb-placeholder">📚</div>`;
+  return `<div class="item admin-book-row">
+    <div class="admin-book-row-main">
+      ${thumb}
+      <div>
+        <div class="split">
+          <strong>${escapeHtml(b.title)}</strong>
+          <span class="pill">Stock ${b.stock ?? 0}</span>
+        </div>
+        <p class="muted">${escapeHtml(b.category || "General")} · ${escapeHtml(b.type || "Book")} · ${escapeHtml(b.country || "N/A")} ${b.area ? `(${escapeHtml(b.area)})` : ""}</p>
+        <p class="muted">${escapeHtml(b.description || "No description.")}</p>
+        <p><strong>RM ${Number(b.price || 0).toFixed(2)}</strong></p>
+        <div class="button-row"><button class="button button-secondary" onclick="editAdminBook('${b.id}')">Edit</button><button class="button button-secondary" onclick="deleteAdminBook('${b.id}')">Delete</button></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function adminBookStorefrontPreviewBlock() {
+  const f = state.adminBookForm;
+  const title = String(f.title || "").trim() || "Untitled";
+  const price = Number(f.price || 0);
+  const category = String(f.category || "General").trim() || "General";
+  const type = String(f.type || "Book").trim() || "Book";
+  const country = String(f.country || "Malaysia").trim() || "Malaysia";
+  const area = String(f.area || "").trim();
+  const imgRaw = String(f.image || "").trim();
+  const imgResolved = imgRaw ? resolvePublicApiUrl(imgRaw) : "";
+  const metaLine = `${type} · ${country}${area ? `, ${area}` : ""}`;
+  return `
+    <div class="admin-book-storefront-preview">
+      <p class="muted admin-book-storefront-hint">How this item appears as a card in the student bookstore.</p>
+      <article class="card bookstore-card admin-book-storefront-card">
+        ${
+          imgResolved
+            ? `<img src="${escapeHtml(imgResolved)}" alt="${escapeHtml(title)}" class="book-image" />`
+            : `<div class="book-image admin-book-storefront-img-placeholder muted">No cover</div>`
+        }
+        <div class="book-card-body">
+          <div class="split">
+            <span class="category-label">${escapeHtml(category)}</span>
+            <span class="book-price">RM ${price.toFixed(2)}</span>
+          </div>
+          <h4>${escapeHtml(title)}</h4>
+          <p class="muted">${escapeHtml(metaLine)}</p>
+        </div>
+      </article>
+    </div>
+  `;
+}
+
+function adminBookEditorPreviewsInnerHTML() {
+  const url = String(state.adminBookForm.image || "").trim();
+  const resolved = url ? resolvePublicApiUrl(url) : "";
+  const coverBlock = resolved
+    ? `<div class="admin-book-cover-preview"><p class="muted admin-book-cover-label">Cover preview</p><img src="${escapeHtml(resolved)}" alt="" class="admin-book-editor-cover" /></div>`
+    : `<div class="admin-book-cover-preview"><p class="muted admin-book-cover-label">Cover preview</p><p class="muted">No cover yet — paste an image URL or upload a file.</p></div>`;
+  const toggleLabel = state.adminBookShowStorefrontPreview ? "Hide storefront preview" : "Show storefront preview";
+  const storefront = state.adminBookShowStorefrontPreview ? adminBookStorefrontPreviewBlock() : "";
+  return `${coverBlock}
+    <div class="button-row admin-book-preview-actions">
+      <button type="button" class="button button-secondary" onclick="toggleAdminBookStorefrontPreview()">${toggleLabel}</button>
+    </div>
+    ${storefront}`;
+}
+
+function syncAdminBookEditorPreviewsDOM() {
+  const el = document.getElementById("admin-book-editor-previews");
+  if (el) el.innerHTML = adminBookEditorPreviewsInnerHTML();
+}
+
+function toggleAdminBookStorefrontPreview() {
+  state.adminBookShowStorefrontPreview = !state.adminBookShowStorefrontPreview;
+  syncAdminBookEditorPreviewsDOM();
 }
 
 function updateAdminBookSearch(value) {
@@ -1380,20 +1465,7 @@ function renderAdminBookCatalogOnly() {
   const visibleBooks = getFilteredAdminBooks();
   countNode.textContent = `${visibleBooks.length} visible`;
   listNode.innerHTML =
-    visibleBooks
-      .map(
-        (b) => `<div class="item">
-          <div class="split">
-            <strong>${b.title}</strong>
-            <span class="pill">Stock ${b.stock ?? 0}</span>
-          </div>
-          <p class="muted">${b.category || "General"} · ${b.type || "Book"} · ${b.country || "N/A"} ${b.area ? `(${b.area})` : ""}</p>
-          <p class="muted">${b.description || "No description."}</p>
-          <p><strong>RM ${Number(b.price || 0).toFixed(2)}</strong></p>
-          <div class="button-row"><button class="button button-secondary" onclick="editAdminBook('${b.id}')">Edit</button><button class="button button-secondary" onclick="deleteAdminBook('${b.id}')">Delete</button></div>
-        </div>`
-      )
-      .join("") || `<p class="muted">No books found for this search.</p>`;
+    visibleBooks.map((b) => adminBookCatalogRowHtml(b)).join("") || `<p class="muted">No books found for this search.</p>`;
 }
 
 async function handleAdminBookImageFile(inputEl) {
@@ -1405,6 +1477,7 @@ async function handleAdminBookImageFile(inputEl) {
     const res = await apiRequest("/admin/uploads/image", { method: "POST", body: formData });
     state.adminBookForm.image = String(res?.item?.url || "");
     pushToast("success", "Book image uploaded.");
+    inputEl.value = "";
     render();
   } catch (err) {
     pushToast("error", err.message || "Failed to upload book image.");
@@ -1558,6 +1631,7 @@ async function sendAdminChatReply() {
 function editAdminBook(bookId) {
   const book = state.adminBooks.find((item) => String(item.id) === String(bookId));
   if (!book) return;
+  state.adminBookShowStorefrontPreview = false;
   state.adminBookForm = {
     id: book.id || "",
     title: book.title || "",
@@ -1598,6 +1672,7 @@ async function saveAdminBook() {
       pushToast("success", "Book created.");
     }
     state.adminBookForm = { id: "", title: "", price: 0, country: "", area: "", type: "", category: "", description: "", image: "", stock: 0 };
+    state.adminBookShowStorefrontPreview = false;
     await refreshAdminPageData();
   } catch (err) {
     pushToast("error", err.message || "Failed to save book.");
@@ -3231,6 +3306,9 @@ function adminPageContent() {
             <div class="field"><label>Upload Image</label><input type="file" accept="image/*" onchange="handleAdminBookImageFile(this)" /></div>
             <div class="field"><label>Stock</label><input type="number" min="0" value="${state.adminBookForm.stock}" oninput="updateAdminBookForm('stock', this.value)" /></div>
           </div>
+          <div id="admin-book-editor-previews" class="admin-book-editor-previews">
+            ${adminBookEditorPreviewsInnerHTML()}
+          </div>
           <div class="button-row">
             <button class="button button-primary" onclick="saveAdminBook()">${state.adminBookForm.id ? "Update Book" : "Add Book"}</button>
           </div>
@@ -3245,25 +3323,7 @@ function adminPageContent() {
             <input value="${state.adminBookSearch}" oninput="updateAdminBookSearch(this.value)" placeholder="Search catalog..." />
           </div>
           <div class="admin-book-list" id="admin-book-list">
-            ${visibleBooks
-              .map(
-                (b) => `<div class="item admin-book-row">
-                  <div class="admin-book-row-main">
-                    ${b.image ? `<img src="${escapeHtml(b.image)}" alt="" class="admin-book-thumb" />` : `<div class="admin-book-thumb admin-book-thumb-placeholder">📚</div>`}
-                    <div>
-                  <div class="split">
-                    <strong>${b.title}</strong>
-                    <span class="pill">Stock ${b.stock ?? 0}</span>
-                  </div>
-                  <p class="muted">${b.category || "General"} · ${b.type || "Book"} · ${b.country || "N/A"} ${b.area ? `(${b.area})` : ""}</p>
-                  <p class="muted">${b.description || "No description."}</p>
-                  <p><strong>RM ${Number(b.price || 0).toFixed(2)}</strong></p>
-                  <div class="button-row"><button class="button button-secondary" onclick="editAdminBook('${b.id}')">Edit</button><button class="button button-secondary" onclick="deleteAdminBook('${b.id}')">Delete</button></div>
-                    </div>
-                  </div>
-                </div>`
-              )
-              .join("") || `<p class="muted">No books found for this search.</p>`}
+            ${visibleBooks.map((b) => adminBookCatalogRowHtml(b)).join("") || `<p class="muted">No books found for this search.</p>`}
           </div>
         </article>
       </section>

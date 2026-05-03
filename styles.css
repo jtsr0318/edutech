@@ -2686,6 +2686,60 @@ textarea {
   font-size: 1.25rem;
 }
 
+.admin-book-editor-previews {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.admin-book-cover-preview {
+  margin-bottom: 0.25rem;
+}
+
+.admin-book-cover-label {
+  margin: 0 0 0.35rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.admin-book-editor-cover {
+  display: block;
+  max-width: 220px;
+  max-height: 280px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--section-soft);
+}
+
+.admin-book-preview-actions {
+  margin-top: 0.75rem;
+}
+
+.admin-book-storefront-preview {
+  margin-top: 1rem;
+}
+
+.admin-book-storefront-hint {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+}
+
+.admin-book-storefront-card {
+  max-width: 320px;
+}
+
+.admin-book-storefront-img-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--section-soft);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
 .forum-admin-replies {
   margin-top: 0.5rem;
   padding-left: 0.5rem;
