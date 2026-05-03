@@ -32,6 +32,7 @@ const state = {
     type: "short",
     dueAt: "",
     publishAt: "",
+    instructions: "",
     rubricTemplate: "",
     timerSeconds: 60,
     quizQuestion: "",
@@ -1198,6 +1199,7 @@ async function saveAdminAssignment() {
       type: String(state.adminAssignmentForm.type || "short").trim(),
       dueAt: datetimeLocalToUtcIso(state.adminAssignmentForm.dueAt),
       publishAt: datetimeLocalToUtcIso(state.adminAssignmentForm.publishAt),
+      instructions: String(state.adminAssignmentForm.instructions || "").trim(),
       rubricTemplate: String(state.adminAssignmentForm.rubricTemplate || "").trim(),
       timerSeconds: Number(state.adminAssignmentForm.timerSeconds || 0),
     };
@@ -1216,6 +1218,7 @@ async function saveAdminAssignment() {
         return;
       }
       payload.quizPayload = {
+        afterSubmitNote: explanation,
         questions: [{ id: "q1", question: q, options: [a, b, c, d], answer, explanation }],
       };
     }
@@ -1232,6 +1235,7 @@ async function saveAdminAssignment() {
       fd.append("type", payload.type);
       fd.append("dueAt", payload.dueAt);
       fd.append("publishAt", payload.publishAt);
+      fd.append("instructions", payload.instructions);
       fd.append("rubricTemplate", payload.rubricTemplate);
       fd.append("timerSeconds", String(payload.timerSeconds));
       if (payload.quizPayload) {
@@ -1261,6 +1265,7 @@ async function saveAdminAssignment() {
       type: "short",
       dueAt: "",
       publishAt: "",
+      instructions: "",
       rubricTemplate: "",
       timerSeconds: 60,
       quizQuestion: "",
@@ -1770,6 +1775,7 @@ function logout() {
     type: "short",
     dueAt: "",
     publishAt: "",
+    instructions: "",
     rubricTemplate: "",
     timerSeconds: 60,
     quizQuestion: "",
@@ -3073,7 +3079,8 @@ function adminPageContent() {
                                       </div>
                                       <div class="field"><label>Due Date & Time</label><input type="datetime-local" value="${state.adminAssignmentForm.dueAt}" oninput="updateAdminAssignmentForm('dueAt', this.value)" /></div>
                                       <div class="field"><label>Publish At (optional)</label><input type="datetime-local" value="${state.adminAssignmentForm.publishAt || ""}" oninput="updateAdminAssignmentForm('publishAt', this.value)" /></div>
-                                      <div class="field" style="grid-column:1 / -1;"><label>Rubric Template</label><textarea placeholder="Criteria, marks, and expectation..." oninput="updateAdminAssignmentForm('rubricTemplate', this.value)">${state.adminAssignmentForm.rubricTemplate || ""}</textarea></div>
+                                      <div class="field" style="grid-column:1 / -1;"><label>Instructions for students (optional)</label><textarea placeholder="What students should read before starting..." oninput="updateAdminAssignmentForm('instructions', this.value)">${state.adminAssignmentForm.instructions || ""}</textarea></div>
+                                      <div class="field" style="grid-column:1 / -1;"><label>Rubric / marking criteria (optional)</label><textarea placeholder="Criteria, marks, and expectations..." oninput="updateAdminAssignmentForm('rubricTemplate', this.value)">${state.adminAssignmentForm.rubricTemplate || ""}</textarea></div>
                                       ${
                                         state.adminAssignmentForm.type === "mcq"
                                           ? `<div class="field"><label>Quiz Timer (seconds)</label><input type="number" min="10" value="${state.adminAssignmentForm.timerSeconds || 60}" oninput="updateAdminAssignmentForm('timerSeconds', this.value)" /></div>
@@ -3090,7 +3097,7 @@ function adminPageContent() {
                                                  <option value="D" ${String(state.adminAssignmentForm.quizAnswerKey || "A") === "D" ? "selected" : ""}>Option D</option>
                                                </select>
                                              </div>
-                                             <div class="field" style="grid-column:1 / -1;"><label>Explanation (shown after submit)</label><textarea oninput="updateAdminAssignmentForm('quizExplanation', this.value)">${state.adminAssignmentForm.quizExplanation || ""}</textarea></div>`
+                                             <div class="field" style="grid-column:1 / -1;"><label>Quiz explanation (shown after students submit; still visible if they use 再次作答)</label><textarea placeholder="Why the correct answer is right, or general feedback..." oninput="updateAdminAssignmentForm('quizExplanation', this.value)">${state.adminAssignmentForm.quizExplanation || ""}</textarea></div>`
                                           : ""
                                       }
                                       <div class="field" style="grid-column:1 / -1;"><label>Attachment (PDF / DOCX / PPT… optional)</label><input id="admin-assignment-attachment" type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.zip,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" /></div>
@@ -3823,7 +3830,8 @@ function renderAssignmentWorkCard(assignment) {
   }
 
   if (assignment.type === "mcq") {
-    const payload = assignment.quizPayload && Array.isArray(assignment.quizPayload.questions) ? assignment.quizPayload : { questions: [] };
+    const payload =
+      assignment.quizPayload && Array.isArray(assignment.quizPayload.questions) ? assignment.quizPayload : { questions: [] };
     const questions = payload.questions;
     const startedAt = state.quizStartAtByAssignment[assignment.id];
     const timerSeconds = Number(assignment.timerSeconds || 0);
@@ -3831,12 +3839,25 @@ function renderAssignmentWorkCard(assignment) {
     const remaining = timerSeconds > 0 ? Math.max(timerSeconds - elapsed, 0) : 0;
     const latestAttempt = state.quizHistoryByAssignment[assignment.id];
     const inRetry = !!state.quizRetryMode[String(assignment.id)];
+    const explBottomRaw =
+      String(payload.afterSubmitNote || "").trim() ||
+      (questions.length === 1 ? String(questions[0]?.explanation || "").trim() : "");
+    const instructorNoteBlock =
+      latestAttempt?.createdAt && explBottomRaw
+        ? `<div class="assignment-classroom-mcq-instructor-note muted"><strong>Quiz explanation</strong><p>${escapeHtml(explBottomRaw)}</p></div>`
+        : "";
     const questionsHtml =
       questions.length > 0
         ? questions
             .map((q, idx) => {
               const qid = String(q.id || `q${idx + 1}`);
               const selected = (state.quizDraftAnswers[assignment.id] || {})[qid];
+              const qExpl = String(q.explanation || "").trim();
+              const showPerQExpl =
+                !!latestAttempt?.createdAt &&
+                !inRetry &&
+                !!qExpl &&
+                !(questions.length === 1 && qExpl === explBottomRaw);
               return `<div class="assignment-classroom-mcq-q">
                 <strong>Q${idx + 1}. ${escapeHtml(String(q.question || ""))}</strong>
                 <div class="option-grid">
@@ -3849,11 +3870,7 @@ function renderAssignmentWorkCard(assignment) {
                     )
                     .join("")}
                 </div>
-                ${
-                  latestAttempt?.createdAt && String(q.explanation || "").trim() && !inRetry
-                    ? `<p class="muted">Explanation: ${escapeHtml(String(q.explanation).trim())}</p>`
-                    : ""
-                }
+                ${showPerQExpl ? `<p class="muted">Explanation: ${escapeHtml(qExpl)}</p>` : ""}
               </div>`;
             })
             .join("")
@@ -3865,6 +3882,7 @@ function renderAssignmentWorkCard(assignment) {
       ${instr}
       ${timerLine}
       ${questionsHtml}
+      ${instructorNoteBlock}
       <div class="assignment-classroom-actions">
         ${
           locked

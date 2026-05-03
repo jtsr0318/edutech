@@ -246,17 +246,20 @@ def create_assignment(course_id):
     title = ""
     ass_type = "short"
     due_at_raw = ""
+    publish_at_raw = ""
     instructions = ""
+    rubric_template = ""
     timer_seconds = None
     quiz_payload = None
-    posted_at = datetime.utcnow()
 
     ct = (request.content_type or "").lower()
     if "multipart/form-data" in ct:
         title = (request.form.get("title") or "").strip()
         ass_type = (request.form.get("type") or "short").strip().lower()
         due_at_raw = (request.form.get("dueAt") or "").strip()
+        publish_at_raw = (request.form.get("publishAt") or "").strip()
         instructions = (request.form.get("instructions") or "").strip()
+        rubric_template = (request.form.get("rubricTemplate") or "").strip()
         timer_seconds = int(request.form.get("timerSeconds") or 0) or None
         quiz_raw = request.form.get("quizPayload") or ""
         if quiz_raw.strip():
@@ -277,7 +280,9 @@ def create_assignment(course_id):
         title = (body.get("title") or "").strip()
         ass_type = (body.get("type") or "short").strip().lower()
         due_at_raw = (body.get("dueAt") or "").strip()
+        publish_at_raw = (body.get("publishAt") or "").strip()
         instructions = (body.get("instructions") or "").strip()
+        rubric_template = (body.get("rubricTemplate") or "").strip()
         timer_seconds = int(body.get("timerSeconds") or 0) or None
         quiz_payload = body.get("quizPayload")
 
@@ -291,6 +296,11 @@ def create_assignment(course_id):
         except Exception:
             return {"message": "Invalid dueAt datetime"}, 400
 
+    try:
+        publish_at = parse_iso_datetime(publish_at_raw)
+    except Exception:
+        return {"message": "Invalid publishAt datetime"}, 400
+
     quiz_text = ""
     if quiz_payload is not None:
         try:
@@ -303,9 +313,9 @@ def create_assignment(course_id):
         title=title,
         type=ass_type,
         due_at=due_at,
-        publish_at=posted_at,
+        publish_at=publish_at,
         instructions=instructions or None,
-        rubric_template=None,
+        rubric_template=rubric_template or None,
         quiz_payload=quiz_text or None,
         timer_seconds=timer_seconds,
         attachment_path=attachment_path,
