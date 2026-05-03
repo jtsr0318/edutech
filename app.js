@@ -2215,8 +2215,12 @@ async function refreshAdminPageData() {
     if (state.adminPage === "users") await adminFetchUsers();
     if (state.adminPage === "support") {
       await adminFetchChatUsers();
-      if (!state.adminSelectedChatUserId && state.adminChatUsers.length > 0) {
-        state.adminSelectedChatUserId = String(state.adminChatUsers[0].id);
+      if (
+        state.adminSelectedChatUserId &&
+        !state.adminChatUsers.some((u) => String(u.id) === String(state.adminSelectedChatUserId))
+      ) {
+        state.adminSelectedChatUserId = "";
+        state.adminChatMessages = [];
       }
       await adminFetchSelectedChatMessages();
     }
@@ -3413,6 +3417,27 @@ function adminPageContent() {
     const selectedUser = state.adminChatUsers.find(
       (u) => String(u.id) === String(state.adminSelectedChatUserId)
     );
+    const hasSelection = !!(state.adminSelectedChatUserId && selectedUser);
+    const chatHeading = hasSelection
+      ? `Chat with ${escapeHtml(selectedUser.name || selectedUser.email || "Student")}`
+      : "Support conversation";
+    const threadMarkup = hasSelection
+      ? (state.adminChatMessages || [])
+          .map((m) => {
+            const fromAdmin = (m.senderRole || m.role || "").toLowerCase() === "admin";
+            return `<article class="chat-msg ${fromAdmin ? "chat-msg-admin" : "chat-msg-student"}">
+                  <div class="chat-msg-meta"><strong>${fromAdmin ? "Admin" : m.senderName || "Student"}</strong><small>${formatChatTime(m.createdAt || m.timestamp)}</small></div>
+                  <p>${m.message || m.text || ""}</p>
+                </article>`;
+          })
+          .join("") || `<p class="muted">No messages yet. Send a reply to start the thread.</p>`
+      : `<p class="muted">Select a user to view conversation.</p>`;
+    const composeMarkup = hasSelection
+      ? `<div class="chat-compose">
+            <input type="text" placeholder="Type a reply..." value="${state.adminChatDraft}" oninput="updateAdminChatDraft(this.value)" />
+            <button class="button button-primary" onclick="sendAdminChatReply()">Send</button>
+          </div>`
+      : "";
     return `
       <section class="card admin-page-hero">
         <div>
@@ -3435,23 +3460,12 @@ function adminPageContent() {
         </aside>
         <div class="admin-chat-main">
           <div class="split">
-            <h3>Chat with ${selectedUser?.name || selectedUser?.email || "Student"}</h3>
+            <h3>${chatHeading}</h3>
           </div>
           <div class="chat-thread">
-            ${(state.adminChatMessages || [])
-              .map((m) => {
-                const fromAdmin = (m.senderRole || m.role || "").toLowerCase() === "admin";
-                return `<article class="chat-msg ${fromAdmin ? "chat-msg-admin" : "chat-msg-student"}">
-                  <div class="chat-msg-meta"><strong>${fromAdmin ? "Admin" : m.senderName || "Student"}</strong><small>${formatChatTime(m.createdAt || m.timestamp)}</small></div>
-                  <p>${m.message || m.text || ""}</p>
-                </article>`;
-              })
-              .join("") || `<p class="muted">Select a user to view conversation.</p>`}
+            ${threadMarkup}
           </div>
-          <div class="chat-compose">
-            <input type="text" placeholder="Type a reply..." value="${state.adminChatDraft}" oninput="updateAdminChatDraft(this.value)" />
-            <button class="button button-primary" onclick="sendAdminChatReply()">Send</button>
-          </div>
+          ${composeMarkup}
         </div>
       </section>
     `;
