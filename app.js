@@ -159,6 +159,9 @@ function resolveDefaultApiBase() {
   return "http://localhost:4000/api";
 }
 
+/** Tab-scoped so admin + student in two tabs do not overwrite each other's login (localStorage is shared). */
+const EDUTECH_AUTH_SESSION_KEY = "edutech_session";
+
 const API_BASE_URL =
   localStorage.getItem("edutech_api_base") ||
   String(window.EDUTECH_API_BASE_URL || "").trim() ||
@@ -364,23 +367,26 @@ async function apiRequest(path, options = {}) {
 
 function persistSession() {
   try {
-    localStorage.setItem(
-      "edutech_session",
-      JSON.stringify({
-        token: state.authToken || "",
-        role: state.authRole || "student",
-        user: state.currentUser || null,
-        page: state.page,
-        postLoginPage: state.postLoginPage,
-        selectedCourse: state.selectedCourse,
-        courseTab: state.courseTab,
-        adminPage: state.adminPage,
-        adminStreamCourseId: state.adminStreamCourseId || "",
-        adminStudioTab: state.adminStudioTab || "materials",
-      })
-    );
+    const json = JSON.stringify({
+      token: state.authToken || "",
+      role: state.authRole || "student",
+      user: state.currentUser || null,
+      page: state.page,
+      postLoginPage: state.postLoginPage,
+      selectedCourse: state.selectedCourse,
+      courseTab: state.courseTab,
+      adminPage: state.adminPage,
+      adminStreamCourseId: state.adminStreamCourseId || "",
+      adminStudioTab: state.adminStudioTab || "materials",
+    });
+    sessionStorage.setItem(EDUTECH_AUTH_SESSION_KEY, json);
+    try {
+      localStorage.removeItem(EDUTECH_AUTH_SESSION_KEY);
+    } catch (_) {
+      /* ignore */
+    }
   } catch (_) {
-    /* localStorage full or disabled — URL hash still records the view */
+    /* sessionStorage unavailable — URL hash still records the view */
   }
   syncEduHashFromState();
 }
@@ -410,7 +416,12 @@ function loadAdminStudioDrafts() {
 }
 
 function clearSession() {
-  localStorage.removeItem("edutech_session");
+  try {
+    localStorage.removeItem(EDUTECH_AUTH_SESSION_KEY);
+  } catch (_) {}
+  try {
+    sessionStorage.removeItem(EDUTECH_AUTH_SESSION_KEY);
+  } catch (_) {}
 }
 
 /** Route snapshot in the URL hash survives full page reload reliably (same as address bar). */
@@ -521,7 +532,17 @@ function applyEduHashToState() {
 
 function loadSessionFromStorage() {
   try {
-    const raw = localStorage.getItem("edutech_session");
+    let raw = sessionStorage.getItem(EDUTECH_AUTH_SESSION_KEY);
+    if (!raw) {
+      raw = localStorage.getItem(EDUTECH_AUTH_SESSION_KEY);
+      if (raw) {
+        try {
+          sessionStorage.setItem(EDUTECH_AUTH_SESSION_KEY, raw);
+        } catch (_) {
+          /* keep using raw below */
+        }
+      }
+    }
     if (!raw) return;
     const session = JSON.parse(raw);
     if (!session?.token) return;
