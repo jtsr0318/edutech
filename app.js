@@ -728,16 +728,20 @@ async function loadDataDrivenCollections() {
 
 /** If the sidebar course name is not in the enrolled list (e.g. default "Web Technology"), switch to a real course so Material/Announcements tabs filter correctly. Prefer a course that already has materials. */
 function syncSelectedCourseWithEnrollments() {
-  const courses = data.courses || [];
+  const courses = getJoinedCourses();
+
   if (!courses.length) {
     return;
   }
+
   const ok = courses.some((c) => c.name === state.selectedCourse);
   if (ok) {
     return;
   }
+
   const materialCourseIds = new Set((data.materials || []).map((m) => String(m.courseId)));
   const withMaterial = courses.find((c) => materialCourseIds.has(String(c.id)));
+
   state.selectedCourse = (withMaterial || courses[0]).name;
 }
 
@@ -2831,8 +2835,28 @@ function ringProgress(value) {
   `;
 }
 
+function isJoinedCourse(course) {
+  return !!(
+    course &&
+    (
+      course.isEnrolled ||
+      course.enrolled ||
+      course.joined ||
+      Number(course.progress || 0) > 0
+    )
+  );
+}
+
+function getJoinedCourses() {
+  return getEffectiveCourses().filter(isJoinedCourse);
+}
+
 function getEnrolledCourseIdSet() {
-  return new Set((data.courses || []).map((c) => String(c.id)));
+  return new Set(
+    (data.courses || [])
+      .filter(isJoinedCourse)
+      .map((c) => String(c.id))
+  );
 }
 
 function assignmentsForCurrentStudent() {
@@ -3835,10 +3859,15 @@ function renderBookstoreGridOnly() {
 }
 
 function coursesView() {
-  const courses = getEffectiveCourses();
-  const sortedCourses = getFilteredCourses();
-  const overall = Math.round(courses.reduce((total, item) => total + item.progress, 0) / Math.max(courses.length, 1));
-  const completed = courses.filter((c) => c.progress >= 100).length;
+const allCourses = getEffectiveCourses();
+const courses = getJoinedCourses();
+const sortedCourses = getFilteredCourses();
+
+const overall = courses.length
+  ? Math.round(courses.reduce((total, item) => total + Number(item.progress || 0), 0) / courses.length)
+  : 0;
+
+const completed = courses.filter((c) => Number(c.progress || 0) >= 100).length;
 
   return `
     <div class="page wide-page fixed-frame">
@@ -4352,7 +4381,21 @@ function renderCourseTabContent() {
 
 function courseView() {
   syncSelectedCourseWithEnrollments();
-  const courses = getEffectiveCourses();
+
+  const courses = getJoinedCourses();
+
+  if (!courses.length) {
+    return `
+      <div class="page wide-page fixed-frame">
+        ${nav()}
+        <section class="card">
+          <h2>No active courses yet</h2>
+          <p class="muted">Please go to Courses, request a join code, then join a course to access course details.</p>
+          <button class="button button-primary" onclick="setPostLoginPage('courses')">Browse Available Courses</button>
+        </section>
+      </div>
+    `;
+  }
   const activeCourse = courses.find((course) => course.name === state.selectedCourse);
   const activeCourseProgress = Number(activeCourse?.progress || 0);
   const selectedCourseObj = data.courses.find((c) => c.name === state.selectedCourse);
