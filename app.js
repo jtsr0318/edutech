@@ -3860,19 +3860,90 @@ function coursesView() {
         </div>
       </div>
 
-      <section class="card courses-join-card">
+            <section class="card courses-join-card">
         <h3>Join a course</h3>
-        <p class="muted">Ask your lecturer for the join code, then enter it here to add the class to My Courses.</p>
+        <p class="muted">After receiving the join code from admin/lecturer, enter it here to add the class to My Courses.</p>
         <div class="courses-join-row">
           <input id="join-course-code-input" class="courses-join-input" type="text" placeholder="e.g. ABCD1234" autocomplete="off" />
           <button type="button" class="button button-primary" onclick="submitJoinCourseByCode()">Join</button>
         </div>
       </section>
 
-      <div id="courses-list-container" class="course-list courses-grid">
-        ${courseCardsMarkup(sortedCourses)}
-      </div>
-    </section>
+      <section class="available-course-section">
+        <div class="split available-course-header">
+          <div>
+            <h3>Available Courses</h3>
+            <p class="muted">
+              Browse available courses below. Click Request Code to ask the admin/lecturer for the join code.
+            </p>
+          </div>
+          <span class="category-label">${sortedCourses.length} course(s)</span>
+        </div>
+
+        <div class="available-course-grid">
+          ${
+            sortedCourses.length
+              ? sortedCourses
+                  .map((course) => {
+                    const isJoined =
+                      course.isEnrolled ||
+                      course.enrolled ||
+                      course.joined ||
+                      Number(course.progress || 0) > 0;
+
+                    const progress = Number(course.progress || 0);
+
+                    return `
+                      <article class="card available-course-card">
+                        <div class="available-course-top">
+                          <img
+                            src="${course.icon || course.image || "image1.png"}"
+                            alt="${escapeHtml(course.name)}"
+                            class="available-course-icon"
+                            onerror="this.style.display='none'"
+                          />
+                          <div>
+                            <h3>${escapeHtml(course.name)}</h3>
+                            <p class="muted">
+                              ${escapeHtml(course.lecturerName || course.lecturer || "Lecturer")} · ${escapeHtml(course.category || "Course")}
+                            </p>
+                          </div>
+                        </div>
+
+                        <p class="muted">
+                          ${escapeHtml(course.description || "This course provides learning materials, announcements, and assignments.")}
+                        </p>
+
+                        ${
+                          isJoined
+                            ? `
+                              <span class="category-label">Joined</span>
+                              <div class="progress-bar-wrap">
+                                <div class="progress-bar-fill" style="width:${progress}%"></div>
+                              </div>
+                              <p class="muted">${progress}% completed</p>
+                              <button class="button button-primary" onclick="setCourse('${escapeHtml(course.name)}')">
+                                Open Course
+                              </button>
+                            `
+                            : `
+                              <span class="category-label">Available</span>
+                              <p class="muted">Request the join code from admin/lecturer before joining this course.</p>
+                              <div class="button-row">
+                                <button class="button button-secondary" onclick="requestCourseCode('${escapeHtml(course.name)}')">
+                                  Request Code
+                                </button>
+                              </div>
+                            `
+                        }
+                      </article>
+                    `;
+                  })
+                  .join("")
+              : `<article class="card available-course-card"><p class="muted">No courses found.</p></article>`
+          }
+        </div>
+      </section>
     </div>
   `;
 }
