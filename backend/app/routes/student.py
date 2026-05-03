@@ -446,6 +446,7 @@ def list_announcements():
                 "title": row.title,
                 "text": row.text,
                 "publishAt": row.publish_at.isoformat() if row.publish_at else None,
+                "createdAt": row.created_at.isoformat() if row.created_at else None,
                 "meta": f"posted at {row.created_at.strftime('%d %b, %I.%M%p')}",
             }
             for row, course in rows
@@ -474,6 +475,7 @@ def list_materials():
                 "type": row.type,
                 "filePath": row.file_path,
                 "publishAt": row.publish_at.isoformat() if row.publish_at else None,
+                "createdAt": row.created_at.isoformat() if row.created_at else None,
             }
             for row in rows
         ]

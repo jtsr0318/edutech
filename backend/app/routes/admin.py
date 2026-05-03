@@ -173,10 +173,6 @@ def create_material(course_id):
         name = safe_name
     file_type = ext
     publish_at = None
-    try:
-        publish_at = parse_iso_datetime(request.form.get("publishAt") or "")
-    except Exception:
-        return {"message": "Invalid publishAt datetime"}, 400
     max_bytes = int(current_app.config.get("MAX_UPLOAD_BYTES", 32 * 1024 * 1024))
     raw = upload.read()
     if len(raw) > max_bytes:
@@ -223,11 +219,7 @@ def create_announcement(course_id):
     text = (body.get("text") or "").strip()
     if not title or not text:
         return {"message": "title and text are required"}, 400
-    try:
-        publish_at = parse_iso_datetime(body.get("publishAt") or "")
-    except Exception:
-        return {"message": "Invalid publishAt datetime"}, 400
-    row = Announcement(course_id=course_id, title=title, text=text, publish_at=publish_at)
+    row = Announcement(course_id=course_id, title=title, text=text, publish_at=None)
     db.session.add(row)
     db.session.commit()
     return {"status": "success", "item": {"id": row.id}}
@@ -246,7 +238,6 @@ def create_assignment(course_id):
     title = ""
     ass_type = "short"
     due_at_raw = ""
-    publish_at_raw = ""
     instructions = ""
     rubric_template = ""
     timer_seconds = None
@@ -257,7 +248,6 @@ def create_assignment(course_id):
         title = (request.form.get("title") or "").strip()
         ass_type = (request.form.get("type") or "short").strip().lower()
         due_at_raw = (request.form.get("dueAt") or "").strip()
-        publish_at_raw = (request.form.get("publishAt") or "").strip()
         instructions = (request.form.get("instructions") or "").strip()
         rubric_template = (request.form.get("rubricTemplate") or "").strip()
         timer_seconds = int(request.form.get("timerSeconds") or 0) or None
@@ -280,7 +270,6 @@ def create_assignment(course_id):
         title = (body.get("title") or "").strip()
         ass_type = (body.get("type") or "short").strip().lower()
         due_at_raw = (body.get("dueAt") or "").strip()
-        publish_at_raw = (body.get("publishAt") or "").strip()
         instructions = (body.get("instructions") or "").strip()
         rubric_template = (body.get("rubricTemplate") or "").strip()
         timer_seconds = int(body.get("timerSeconds") or 0) or None
@@ -296,10 +285,7 @@ def create_assignment(course_id):
         except Exception:
             return {"message": "Invalid dueAt datetime"}, 400
 
-    try:
-        publish_at = parse_iso_datetime(publish_at_raw)
-    except Exception:
-        return {"message": "Invalid publishAt datetime"}, 400
+    publish_at = None
 
     quiz_text = ""
     if quiz_payload is not None:

@@ -24,14 +24,13 @@ const state = {
   adminCourseForm: { id: "", name: "", lecturerName: "" },
   adminStreamCourseId: "",
   adminEnrollments: [],
-  adminMaterialForm: { courseId: "", name: "", commentText: "", publishAt: "" },
-  adminAnnouncementForm: { courseId: "", title: "", text: "", publishAt: "" },
+  adminMaterialForm: { courseId: "", name: "", commentText: "" },
+  adminAnnouncementForm: { courseId: "", title: "", text: "" },
   adminAssignmentForm: {
     courseId: "",
     title: "",
     type: "short",
     dueAt: "",
-    publishAt: "",
     instructions: "",
     timerSeconds: 60,
     quizQuestion: "",
@@ -1180,7 +1179,6 @@ async function saveAdminMaterial() {
     const formData = new FormData();
     formData.append("name", materialName || selectedFile.name);
     formData.append("file", selectedFile);
-    formData.append("publishAt", datetimeLocalToUtcIso(state.adminMaterialForm.publishAt));
     const uploadRes = await apiRequest(`/admin/courses/${courseId}/materials`, { method: "POST", body: formData });
     const inlineComment = String(state.adminMaterialForm.commentText || "").trim();
     if (inlineComment && uploadRes?.item?.id) {
@@ -1194,7 +1192,7 @@ async function saveAdminMaterial() {
         },
       });
     }
-    state.adminMaterialForm = { courseId: String(state.adminStreamCourseId || ""), name: "", commentText: "", publishAt: "" };
+    state.adminMaterialForm = { courseId: String(state.adminStreamCourseId || ""), name: "", commentText: "" };
     persistAdminStudioDrafts();
     if (fileInput) fileInput.value = "";
     await loadDataDrivenCollections();
@@ -1211,14 +1209,13 @@ async function saveAdminAnnouncement() {
     const payload = {
       title: String(state.adminAnnouncementForm.title || "").trim(),
       text: String(state.adminAnnouncementForm.text || "").trim(),
-      publishAt: datetimeLocalToUtcIso(state.adminAnnouncementForm.publishAt),
     };
     if (!courseId || !payload.title || !payload.text) {
       pushToast("error", "Course, title, and announcement text are required.");
       return;
     }
     await apiRequest(`/admin/courses/${courseId}/announcements`, { method: "POST", body: payload });
-    state.adminAnnouncementForm = { courseId: String(state.adminStreamCourseId || ""), title: "", text: "", publishAt: "" };
+    state.adminAnnouncementForm = { courseId: String(state.adminStreamCourseId || ""), title: "", text: "" };
     persistAdminStudioDrafts();
     await loadDataDrivenCollections();
     pushToast("success", "Announcement posted.");
@@ -1235,7 +1232,6 @@ async function saveAdminAssignment() {
       title: String(state.adminAssignmentForm.title || "").trim(),
       type: String(state.adminAssignmentForm.type || "short").trim(),
       dueAt: datetimeLocalToUtcIso(state.adminAssignmentForm.dueAt),
-      publishAt: datetimeLocalToUtcIso(state.adminAssignmentForm.publishAt),
       instructions: String(state.adminAssignmentForm.instructions || "").trim(),
       rubricTemplate: "",
       timerSeconds: Number(state.adminAssignmentForm.timerSeconds || 0),
@@ -1271,7 +1267,6 @@ async function saveAdminAssignment() {
       fd.append("title", payload.title);
       fd.append("type", payload.type);
       fd.append("dueAt", payload.dueAt);
-      fd.append("publishAt", payload.publishAt);
       fd.append("instructions", payload.instructions);
       fd.append("rubricTemplate", payload.rubricTemplate || "");
       fd.append("timerSeconds", String(payload.timerSeconds));
@@ -1301,7 +1296,6 @@ async function saveAdminAssignment() {
       title: "",
       type: "short",
       dueAt: "",
-      publishAt: "",
       instructions: "",
       timerSeconds: 60,
       quizQuestion: "",
@@ -1442,6 +1436,11 @@ function formatMalaysiaDateTime(input) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function postedTimeMalaysia(iso) {
+  const t = formatMalaysiaDateTime(iso);
+  return t ? `Posted ${t}` : "";
 }
 
 async function loadStudentChat() {
@@ -1818,14 +1817,13 @@ function logout() {
   state.adminChatDraft = "";
   state.adminCourseForm = { id: "", name: "", lecturerName: "" };
   state.adminStreamCourseId = "";
-  state.adminMaterialForm = { courseId: "", name: "", commentText: "", publishAt: "" };
-  state.adminAnnouncementForm = { courseId: "", title: "", text: "", publishAt: "" };
+  state.adminMaterialForm = { courseId: "", name: "", commentText: "" };
+  state.adminAnnouncementForm = { courseId: "", title: "", text: "" };
   state.adminAssignmentForm = {
     courseId: "",
     title: "",
     type: "short",
     dueAt: "",
-    publishAt: "",
     instructions: "",
     timerSeconds: 60,
     quizQuestion: "",
@@ -2995,16 +2993,19 @@ function adminPageContent() {
                 .slice(0, 6)
                 .map((a) => `<div class="item"><strong>${a.title}</strong><p class="muted">${a.type.toUpperCase()} · ${a.due || "No due date"}</p></div>`)
                 .join("")
-            : `<p class="muted">No assignments published yet.</p>`}
+            : `<p class="muted">No assignments yet.</p>`}
         </article>
         <article class="card admin-surface">
           <h3>Recent Announcements</h3>
           ${(data.announcements || []).length
             ? data.announcements
                 .slice(0, 6)
-                .map((a) => `<div class="item"><strong>${a.title}</strong><p class="muted">${a.meta || ""}</p></div>`)
+                .map(
+                  (a) =>
+                    `<div class="item"><strong>${escapeHtml(a.title || "")}</strong><p class="muted">${escapeHtml(postedTimeMalaysia(a.createdAt) || a.meta || "")}</p></div>`
+                )
                 .join("")
-            : `<p class="muted">No announcements published yet.</p>`}
+            : `<p class="muted">No announcements yet.</p>`}
         </article>
       </section>
     `;
@@ -3080,7 +3081,6 @@ function adminPageContent() {
                                       <div class="field"><label>Course</label><input value="${c.name}" disabled /></div>
                                       <div class="field"><label>Lecture Note Title</label><input value="${state.adminMaterialForm.name}" oninput="updateAdminMaterialForm('name', this.value)" /></div>
                                       <div class="field" style="grid-column:1 / -1;"><label>Select File (pdf/mp4/doc/etc.)</label><input id="admin-material-file" type="file" /></div>
-                                      <div class="field"><label>Publish At (optional)</label><input type="datetime-local" value="${state.adminMaterialForm.publishAt || ""}" oninput="updateAdminMaterialForm('publishAt', this.value)" /></div>
                                       <div class="field" style="grid-column:1 / -1;"><label>Comment for this Material (optional)</label><textarea placeholder="Explain what students need to do with this material..." oninput="updateAdminMaterialForm('commentText', this.value)">${state.adminMaterialForm.commentText || ""}</textarea></div>
                                     </div>
                                     <div class="button-row"><button class="button button-primary" onclick="saveAdminMaterial()">Upload Material</button></div>
@@ -3095,7 +3095,6 @@ function adminPageContent() {
                                       <div class="field"><label>Course</label><input value="${c.name}" disabled /></div>
                                       <div class="field"><label>Announcement Title</label><input value="${state.adminAnnouncementForm.title}" oninput="updateAdminAnnouncementForm('title', this.value)" /></div>
                                       <div class="field" style="grid-column:1 / -1;"><label>Announcement Text</label><textarea oninput="updateAdminAnnouncementForm('text', this.value)">${state.adminAnnouncementForm.text}</textarea></div>
-                                      <div class="field"><label>Publish At (optional)</label><input type="datetime-local" value="${state.adminAnnouncementForm.publishAt || ""}" oninput="updateAdminAnnouncementForm('publishAt', this.value)" /></div>
                                     </div>
                                     <div class="button-row"><button class="button button-primary" onclick="saveAdminAnnouncement()">Post Announcement</button></div>
                                   </article>`
@@ -3116,7 +3115,6 @@ function adminPageContent() {
                                         </select>
                                       </div>
                                       <div class="field"><label>Due Date & Time</label><input type="datetime-local" value="${state.adminAssignmentForm.dueAt}" oninput="updateAdminAssignmentForm('dueAt', this.value)" /></div>
-                                      <div class="field"><label>Publish At (optional)</label><input type="datetime-local" value="${state.adminAssignmentForm.publishAt || ""}" oninput="updateAdminAssignmentForm('publishAt', this.value)" /></div>
                                       <div class="field" style="grid-column:1 / -1;"><label>Instructions for students (optional)</label><textarea placeholder="What students should read before starting..." oninput="updateAdminAssignmentForm('instructions', this.value)">${state.adminAssignmentForm.instructions || ""}</textarea></div>
                                       ${
                                         state.adminAssignmentForm.type === "mcq"
@@ -3166,7 +3164,7 @@ function adminPageContent() {
                               <strong>Uploaded Materials</strong>
                               ${courseMaterials
                                 .map(
-                                  (m) => `<div class="item"><div class="split"><span>${m.name}</span><small>${m.type}</small></div><div class="button-row">${
+                                  (m) => `<div class="item"><div class="split"><span>${escapeHtml(m.name || "")}</span><small class="muted">${escapeHtml(postedTimeMalaysia(m.createdAt) || m.type || "")}</small></div><div class="button-row">${
                                     (m.filePath || "").startsWith("/api/materials/")
                                       ? `<button type="button" class="button button-secondary" onclick="openMaterialFromApi('${m.id}')">Open</button>`
                                       : `<a class="button button-secondary" href="${escapeHtml(resolvePublicApiUrl(m.filePath || m.url || "#"))}" target="_blank" rel="noopener noreferrer">Open</a>`
@@ -3178,7 +3176,7 @@ function adminPageContent() {
                               <strong>Course Announcements</strong>
                               ${courseAnnouncements
                                 .map(
-                                  (a) => `<div class="item"><div class="split"><span>${a.title}</span><small>${a.meta || ""}</small></div><div class="button-row"><button class="button button-secondary" onclick="deleteAdminAnnouncement('${a.id}')">Delete</button></div></div>`
+                                  (a) => `<div class="item"><div class="split"><span>${escapeHtml(a.title || "")}</span><small class="muted">${escapeHtml(postedTimeMalaysia(a.createdAt) || a.meta || "")}</small></div><div class="button-row"><button class="button button-secondary" onclick="deleteAdminAnnouncement('${a.id}')">Delete</button></div></div>`
                                 )
                                 .join("") || `<p class="muted">No announcements posted yet.</p>`}
                             </article>
@@ -3186,7 +3184,7 @@ function adminPageContent() {
                               <strong>Assignments</strong>
                               ${courseAssignments
                                 .map(
-                                  (a) => `<div class="item"><div class="split"><span>${a.title}</span><small>${a.due || "No due date"}</small></div><div class="button-row"><button class="button button-secondary" onclick="deleteAdminAssignment('${a.id}')">Delete</button></div></div>`
+                                  (a) => `<div class="item"><div class="split"><span>${escapeHtml(a.title || "")}</span><small class="muted">${escapeHtml(postedTimeMalaysia(a.createdAt) || "")}${a.due ? ` · Due ${escapeHtml(a.due)}` : ""}</small></div><div class="button-row"><button class="button button-secondary" onclick="deleteAdminAssignment('${a.id}')">Delete</button></div></div>`
                                 )
                                 .join("") || `<p class="muted">No assignments posted yet.</p>`}
                             </article>
@@ -3754,7 +3752,7 @@ function assignmentClassroomHeader(assignment) {
       <span class="muted">${typeLabel}</span>
       <span class="muted">Due ${dueLine}</span>
     </div>
-    ${assignment.isPublished === false ? `<p class="muted assignment-classroom-scheduled">Scheduled — attachment and actions unlock at publish time.</p>` : ""}
+    ${assignment.isPublished === false ? `<p class="muted assignment-classroom-scheduled">Not available yet — check back later.</p>` : ""}
   </div>
   <hr class="assignment-classroom-rule" />`;
 }
@@ -3767,7 +3765,7 @@ function assignmentTeacherStrip(assignment, locked) {
   const id = String(assignment.id);
   const attHref = resolvePublicApiUrl(attPath);
   if (locked) {
-    return `<div class="assignment-material-strip muted"><span>Teacher file — available when published</span></div>`;
+    return `<div class="assignment-material-strip muted"><span>Teacher file — not available yet</span></div>`;
   }
   if (attPath.startsWith("/api/assignments/")) {
     return `<div class="assignment-material-strip">
@@ -3850,7 +3848,7 @@ function renderAssignmentWorkCard(assignment) {
       <div class="assignment-classroom-actions">
         ${
           locked
-            ? `<p class="muted">Submission opens when this assignment is published.</p>`
+            ? `<p class="muted">This assignment is not available yet.</p>`
             : `<input type="file" id="student-assignment-upload-${assignment.id}" class="assignment-file-input-hidden" onchange="onStudentAssignmentUploadPick('${assignment.id}', this)" />
         <button type="button" class="button button-primary" onclick="triggerStudentAssignmentUploadPick('${assignment.id}')">Upload</button>
         <button type="button" class="button button-secondary" onclick="submitAssignment('${assignment.id}', 'Mark as Done')">Mark as Done</button>`
@@ -3919,7 +3917,7 @@ function renderAssignmentWorkCard(assignment) {
       <div class="assignment-classroom-actions">
         ${
           locked
-            ? `<p class="muted">Quiz locked until published.</p>`
+            ? `<p class="muted">This quiz is not available yet.</p>`
             : `<button type="button" class="button button-primary" onclick="submitMcqAnswer('${assignment.id}')">Submit Quiz</button>`
         }
         ${
@@ -3948,7 +3946,7 @@ function renderAssignmentWorkCard(assignment) {
     <div class="assignment-classroom-actions">
       ${
         locked
-          ? `<p class="muted">Submission locked until published.</p>`
+          ? `<p class="muted">This assignment is not available yet.</p>`
           : `<button type="button" class="button button-primary" onclick="submitAssignment('${assignment.id}', 'Short answer submission')">Submit</button>`
       }
     </div>
@@ -4022,17 +4020,17 @@ function renderCourseTabContent() {
               <div class="announce-header">
                 <button class="announce-action ${state.announcementCommentOpen[a.id] ? "announce-action-active" : ""}" onclick="toggleAnnouncementComment('${a.id}')">💬 Comments</button>
                 <button class="announce-action ${state.userScoped.savedAnnouncements[a.id] ? "announce-action-saved" : ""}" onclick="toggleAnnouncementSave('${a.id}')">${state.userScoped.savedAnnouncements[a.id] ? "🔖 Saved" : "🔖 Save"}</button>
-                <h4>${a.title}</h4>
+                <h4>${escapeHtml(a.title || "")}</h4>
               </div>
               <small class="muted announce-meta">
                 <span>${data.lecturer.name}</span>
                 <span>•</span>
-                <span>${a.meta}</span>
+                <span>${escapeHtml(postedTimeMalaysia(a.createdAt) || a.meta || "")}</span>
               </small>
             </div>
             <div class="lecturer-mini lecturer-chip">${data.lecturer.avatar} ${data.lecturer.name}</div>
           </div>
-          <p>${a.text}</p>
+          <p>${escapeHtml(a.text || "")}</p>
           <div class="floating-comment ${state.announcementCommentOpen[a.id] ? "" : "hidden"}">
             <h5>Announcement Discussion</h5>
             <div class="comment-thread">
@@ -4097,8 +4095,8 @@ function renderCourseTabContent() {
                 <div class="file-row">
                   <span class="file-badge ${badgeClass(m.type)}">${m.type}</span>
                   <div>
-                    <strong>${m.name}</strong>
-                    <p class="muted file-meta">Uploaded by ${data.lecturer.name}</p>
+                    <strong>${escapeHtml(m.name || "")}</strong>
+                    <p class="muted file-meta">${postedTimeMalaysia(m.createdAt) ? `${escapeHtml(postedTimeMalaysia(m.createdAt))} · ` : ""}${escapeHtml(data.lecturer.name || "Instructor")}</p>
                   </div>
                 </div>
                 <button class="button button-secondary" onclick="toggleMaterial('${m.id}')">${state.materialOpen[m.id] ? "Hide details" : "View details"}</button>
