@@ -246,17 +246,17 @@ def create_assignment(course_id):
     title = ""
     ass_type = "short"
     due_at_raw = ""
-    rubric_template = ""
+    instructions = ""
     timer_seconds = None
     quiz_payload = None
-    publish_at = None
+    posted_at = datetime.utcnow()
 
     ct = (request.content_type or "").lower()
     if "multipart/form-data" in ct:
         title = (request.form.get("title") or "").strip()
         ass_type = (request.form.get("type") or "short").strip().lower()
         due_at_raw = (request.form.get("dueAt") or "").strip()
-        rubric_template = (request.form.get("rubricTemplate") or "").strip()
+        instructions = (request.form.get("instructions") or "").strip()
         timer_seconds = int(request.form.get("timerSeconds") or 0) or None
         quiz_raw = request.form.get("quizPayload") or ""
         if quiz_raw.strip():
@@ -264,10 +264,6 @@ def create_assignment(course_id):
                 quiz_payload = json.loads(quiz_raw)
             except Exception:
                 return {"message": "Invalid quizPayload JSON"}, 400
-        try:
-            publish_at = parse_iso_datetime(request.form.get("publishAt") or "")
-        except Exception:
-            return {"message": "Invalid publishAt datetime"}, 400
         upload = request.files.get("attachment")
         if upload and upload.filename:
             max_bytes = int(current_app.config.get("MAX_UPLOAD_BYTES", 32 * 1024 * 1024))
@@ -281,13 +277,9 @@ def create_assignment(course_id):
         title = (body.get("title") or "").strip()
         ass_type = (body.get("type") or "short").strip().lower()
         due_at_raw = (body.get("dueAt") or "").strip()
-        rubric_template = (body.get("rubricTemplate") or "").strip()
+        instructions = (body.get("instructions") or "").strip()
         timer_seconds = int(body.get("timerSeconds") or 0) or None
         quiz_payload = body.get("quizPayload")
-        try:
-            publish_at = parse_iso_datetime(body.get("publishAt") or "")
-        except Exception:
-            return {"message": "Invalid publishAt datetime"}, 400
 
     if not title:
         return {"message": "title is required"}, 400
@@ -311,8 +303,9 @@ def create_assignment(course_id):
         title=title,
         type=ass_type,
         due_at=due_at,
-        publish_at=publish_at,
-        rubric_template=rubric_template,
+        publish_at=posted_at,
+        instructions=instructions or None,
+        rubric_template=None,
         quiz_payload=quiz_text or None,
         timer_seconds=timer_seconds,
         attachment_path=attachment_path,
@@ -324,7 +317,14 @@ def create_assignment(course_id):
     if attachment_blob:
         row.attachment_path = f"/api/assignments/{row.id}/attachment"
     db.session.commit()
-    return {"status": "success", "item": {"id": row.id, "attachmentPath": row.attachment_path or ""}}
+    return {
+        "status": "success",
+        "item": {
+            "id": row.id,
+            "attachmentPath": row.attachment_path or "",
+            "publishAt": row.publish_at.isoformat() if row.publish_at else "",
+        },
+    }
 
 
 @admin_bp.post("/admin/comments")

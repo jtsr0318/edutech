@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS assignments (
   type VARCHAR(50) NOT NULL DEFAULT 'short',
   due_at DATETIME NULL,
   publish_at DATETIME NULL,
+  instructions LONGTEXT NULL,
   rubric_template TEXT NULL,
   quiz_payload LONGTEXT NULL,
   timer_seconds INT NULL,

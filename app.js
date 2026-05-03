@@ -31,8 +31,7 @@ const state = {
     title: "",
     type: "short",
     dueAt: "",
-    publishAt: "",
-    rubricTemplate: "",
+    instructions: "",
     timerSeconds: 60,
     quizQuestion: "",
     quizOptionA: "",
@@ -41,7 +40,6 @@ const state = {
     quizOptionD: "",
     quizAnswerKey: "A",
     quizExplanation: "",
-    commentText: "",
   },
   adminCommentForm: { courseId: "", contentType: "announcement", contentId: "", text: "" },
   adminStudioTab: "materials",
@@ -203,7 +201,12 @@ async function fetchAuthorizedBinary(apiPath) {
     }
     throw new Error(msg);
   }
-  return res.blob();
+  const blob = await res.blob();
+  const ct = (res.headers.get("Content-Type") || "").split(";")[0].trim();
+  if (ct && ct !== "application/octet-stream" && (!blob.type || blob.type === "application/octet-stream")) {
+    return blob.slice(0, blob.size, ct);
+  }
+  return blob;
 }
 
 async function openMaterialFromApi(materialId) {
@@ -305,25 +308,25 @@ async function apiRequest(path, options = {}) {
   return payload;
 }
 
+const EDUTECH_SESSION_KEY = "edutech_session";
+
 function persistSession() {
   try {
-    localStorage.setItem(
-      "edutech_session",
-      JSON.stringify({
-        token: state.authToken || "",
-        role: state.authRole || "student",
-        user: state.currentUser || null,
-        page: state.page,
-        postLoginPage: state.postLoginPage,
-        selectedCourse: state.selectedCourse,
-        courseTab: state.courseTab,
-        adminPage: state.adminPage,
-        adminStreamCourseId: state.adminStreamCourseId || "",
-        adminStudioTab: state.adminStudioTab || "materials",
-      })
-    );
+    const payload = JSON.stringify({
+      token: state.authToken || "",
+      role: state.authRole || "student",
+      user: state.currentUser || null,
+      page: state.page,
+      postLoginPage: state.postLoginPage,
+      selectedCourse: state.selectedCourse,
+      courseTab: state.courseTab,
+      adminPage: state.adminPage,
+      adminStreamCourseId: state.adminStreamCourseId || "",
+      adminStudioTab: state.adminStudioTab || "materials",
+    });
+    sessionStorage.setItem(EDUTECH_SESSION_KEY, payload);
   } catch (_) {
-    /* localStorage full or disabled — URL hash still records the view */
+    /* sessionStorage disabled — URL hash still records the view */
   }
   syncEduHashFromState();
 }
@@ -331,7 +334,7 @@ function persistSession() {
 function persistAdminStudioDrafts() {
   try {
     localStorage.setItem(
-      "edutech_admin_studio_drafts",
+      "edutech_admin_studio_drafts_v2",
       JSON.stringify({
         material: state.adminMaterialForm,
         announcement: state.adminAnnouncementForm,
@@ -343,7 +346,7 @@ function persistAdminStudioDrafts() {
 
 function loadAdminStudioDrafts() {
   try {
-    const raw = localStorage.getItem("edutech_admin_studio_drafts");
+    const raw = localStorage.getItem("edutech_admin_studio_drafts_v2");
     if (!raw) return;
     const parsed = JSON.parse(raw);
     if (parsed?.material) state.adminMaterialForm = { ...state.adminMaterialForm, ...parsed.material };
@@ -353,7 +356,12 @@ function loadAdminStudioDrafts() {
 }
 
 function clearSession() {
-  localStorage.removeItem("edutech_session");
+  try {
+    sessionStorage.removeItem(EDUTECH_SESSION_KEY);
+  } catch (_) {}
+  try {
+    localStorage.removeItem("edutech_session");
+  } catch (_) {}
 }
 
 /** Route snapshot in the URL hash survives full page reload reliably (same as address bar). */
@@ -464,7 +472,10 @@ function applyEduHashToState() {
 
 function loadSessionFromStorage() {
   try {
-    const raw = localStorage.getItem("edutech_session");
+    let raw = null;
+    try {
+      raw = sessionStorage.getItem(EDUTECH_SESSION_KEY);
+    } catch (_) {}
     if (!raw) return;
     const session = JSON.parse(raw);
     if (!session?.token) return;
@@ -1140,8 +1151,7 @@ async function saveAdminAssignment() {
       title: String(state.adminAssignmentForm.title || "").trim(),
       type: String(state.adminAssignmentForm.type || "short").trim(),
       dueAt: datetimeLocalToUtcIso(state.adminAssignmentForm.dueAt),
-      publishAt: datetimeLocalToUtcIso(state.adminAssignmentForm.publishAt),
-      rubricTemplate: String(state.adminAssignmentForm.rubricTemplate || "").trim(),
+      instructions: String(state.adminAssignmentForm.instructions || "").trim(),
       timerSeconds: Number(state.adminAssignmentForm.timerSeconds || 0),
     };
     if (payload.type === "mcq") {
@@ -1174,8 +1184,7 @@ async function saveAdminAssignment() {
       fd.append("title", payload.title);
       fd.append("type", payload.type);
       fd.append("dueAt", payload.dueAt);
-      fd.append("publishAt", payload.publishAt);
-      fd.append("rubricTemplate", payload.rubricTemplate);
+      fd.append("instructions", payload.instructions);
       fd.append("timerSeconds", String(payload.timerSeconds));
       if (payload.quizPayload) {
         fd.append("quizPayload", JSON.stringify(payload.quizPayload));
@@ -1186,25 +1195,12 @@ async function saveAdminAssignment() {
       createRes = await apiRequest(`/admin/courses/${courseId}/assignments`, { method: "POST", body: payload });
     }
     if (fileInput) fileInput.value = "";
-    const inlineComment = String(state.adminAssignmentForm.commentText || "").trim();
-    if (inlineComment && createRes?.item?.id) {
-      await apiRequest("/admin/comments", {
-        method: "POST",
-        body: {
-          courseId,
-          contentType: "assignment",
-          contentId: String(createRes.item.id),
-          text: inlineComment,
-        },
-      });
-    }
     state.adminAssignmentForm = {
       courseId: String(state.adminStreamCourseId || ""),
       title: "",
       type: "short",
       dueAt: "",
-      publishAt: "",
-      rubricTemplate: "",
+      instructions: "",
       timerSeconds: 60,
       quizQuestion: "",
       quizOptionA: "",
@@ -1213,7 +1209,6 @@ async function saveAdminAssignment() {
       quizOptionD: "",
       quizAnswerKey: "A",
       quizExplanation: "",
-      commentText: "",
     };
     persistAdminStudioDrafts();
     await loadDataDrivenCollections();
@@ -1712,8 +1707,7 @@ function logout() {
     title: "",
     type: "short",
     dueAt: "",
-    publishAt: "",
-    rubricTemplate: "",
+    instructions: "",
     timerSeconds: 60,
     quizQuestion: "",
     quizOptionA: "",
@@ -1722,7 +1716,6 @@ function logout() {
     quizOptionD: "",
     quizAnswerKey: "A",
     quizExplanation: "",
-    commentText: "",
   };
   state.adminCommentForm = { courseId: "", contentType: "announcement", contentId: "", text: "" };
   state.adminStudioTab = "materials";
@@ -2455,7 +2448,7 @@ function formatSubmittedTime(ts) {
 }
 
 async function submitAssignment(assignmentId, sourceLabel) {
-  const assignment = data.assignments.find((a) => a.id === assignmentId);
+  const assignment = data.assignments.find((a) => String(a.id) === String(assignmentId));
   if (!assignment) return;
   if (assignment.type === "short" && !String(state.shortAnswerDrafts[assignmentId] || "").trim()) {
     pushToast("error", "Please write your short answer before submitting.");
@@ -2983,29 +2976,29 @@ function adminPageContent() {
                             ${
                               state.adminStudioTab === "assignments"
                                 ? `<article class="card admin-stream-block admin-surface">
-                                    <h4>Set Assignment</h4>
+                                    <h4>Create assignment</h4>
+                                    <p class="muted" style="margin-bottom:0.75rem;">发布时间将在保存时自动记录（服务器时间），无需填写。</p>
                                     <div class="grid-2">
                                       <div class="field"><label>Course</label><input value="${c.name}" disabled /></div>
-                                      <div class="field"><label>Assignment Title</label><input value="${state.adminAssignmentForm.title}" oninput="updateAdminAssignmentForm('title', this.value)" /></div>
-                                      <div class="field"><label>Assignment Type</label>
+                                      <div class="field"><label>Assignment title</label><input value="${state.adminAssignmentForm.title}" oninput="updateAdminAssignmentForm('title', this.value)" placeholder="e.g. Week 3 lab report" /></div>
+                                      <div class="field"><label>Assignment type</label>
                                         <select onchange="updateAdminAssignmentForm('type', this.value)">
-                                          <option value="short" ${state.adminAssignmentForm.type === "short" ? "selected" : ""}>Short</option>
-                                          <option value="mcq" ${state.adminAssignmentForm.type === "mcq" ? "selected" : ""}>MCQ</option>
-                                          <option value="upload" ${state.adminAssignmentForm.type === "upload" ? "selected" : ""}>Upload</option>
+                                          <option value="short" ${state.adminAssignmentForm.type === "short" ? "selected" : ""}>Short answer</option>
+                                          <option value="mcq" ${state.adminAssignmentForm.type === "mcq" ? "selected" : ""}>MCQ quiz</option>
+                                          <option value="upload" ${state.adminAssignmentForm.type === "upload" ? "selected" : ""}>Upload / project</option>
                                         </select>
                                       </div>
-                                      <div class="field"><label>Due Date & Time</label><input type="datetime-local" value="${state.adminAssignmentForm.dueAt}" oninput="updateAdminAssignmentForm('dueAt', this.value)" /></div>
-                                      <div class="field"><label>Publish At (optional)</label><input type="datetime-local" value="${state.adminAssignmentForm.publishAt || ""}" oninput="updateAdminAssignmentForm('publishAt', this.value)" /></div>
-                                      <div class="field" style="grid-column:1 / -1;"><label>Rubric Template</label><textarea placeholder="Criteria, marks, and expectation..." oninput="updateAdminAssignmentForm('rubricTemplate', this.value)">${state.adminAssignmentForm.rubricTemplate || ""}</textarea></div>
+                                      <div class="field"><label>Due date &amp; time</label><input type="datetime-local" value="${state.adminAssignmentForm.dueAt}" oninput="updateAdminAssignmentForm('dueAt', this.value)" /></div>
+                                      <div class="field" style="grid-column:1 / -1;"><label>Assignment instructions</label><textarea rows="5" placeholder="Describe requirements, format, length, what to submit…" oninput="updateAdminAssignmentForm('instructions', this.value)">${state.adminAssignmentForm.instructions || ""}</textarea></div>
                                       ${
                                         state.adminAssignmentForm.type === "mcq"
-                                          ? `<div class="field"><label>Quiz Timer (seconds)</label><input type="number" min="10" value="${state.adminAssignmentForm.timerSeconds || 60}" oninput="updateAdminAssignmentForm('timerSeconds', this.value)" /></div>
-                                             <div class="field" style="grid-column:1 / -1;"><label>Quiz Question</label><input value="${state.adminAssignmentForm.quizQuestion || ""}" oninput="updateAdminAssignmentForm('quizQuestion', this.value)" /></div>
+                                          ? `<div class="field"><label>Quiz timer (seconds)</label><input type="number" min="10" value="${state.adminAssignmentForm.timerSeconds || 60}" oninput="updateAdminAssignmentForm('timerSeconds', this.value)" /></div>
+                                             <div class="field" style="grid-column:1 / -1;"><label>Quiz question</label><input value="${state.adminAssignmentForm.quizQuestion || ""}" oninput="updateAdminAssignmentForm('quizQuestion', this.value)" /></div>
                                              <div class="field"><label>Option A</label><input value="${state.adminAssignmentForm.quizOptionA || ""}" oninput="updateAdminAssignmentForm('quizOptionA', this.value)" /></div>
                                              <div class="field"><label>Option B</label><input value="${state.adminAssignmentForm.quizOptionB || ""}" oninput="updateAdminAssignmentForm('quizOptionB', this.value)" /></div>
                                              <div class="field"><label>Option C</label><input value="${state.adminAssignmentForm.quizOptionC || ""}" oninput="updateAdminAssignmentForm('quizOptionC', this.value)" /></div>
                                              <div class="field"><label>Option D</label><input value="${state.adminAssignmentForm.quizOptionD || ""}" oninput="updateAdminAssignmentForm('quizOptionD', this.value)" /></div>
-                                             <div class="field" style="grid-column:1 / -1;"><label>Correct Answer</label>
+                                             <div class="field" style="grid-column:1 / -1;"><label>Correct answer</label>
                                                <select onchange="updateAdminAssignmentForm('quizAnswerKey', this.value)">
                                                  <option value="A" ${String(state.adminAssignmentForm.quizAnswerKey || "A") === "A" ? "selected" : ""}>Option A</option>
                                                  <option value="B" ${String(state.adminAssignmentForm.quizAnswerKey || "A") === "B" ? "selected" : ""}>Option B</option>
@@ -3013,13 +3006,12 @@ function adminPageContent() {
                                                  <option value="D" ${String(state.adminAssignmentForm.quizAnswerKey || "A") === "D" ? "selected" : ""}>Option D</option>
                                                </select>
                                              </div>
-                                             <div class="field" style="grid-column:1 / -1;"><label>Explanation (shown after submit)</label><textarea oninput="updateAdminAssignmentForm('quizExplanation', this.value)">${state.adminAssignmentForm.quizExplanation || ""}</textarea></div>`
+                                             <div class="field" style="grid-column:1 / -1;"><label>Explanation (after submit)</label><textarea oninput="updateAdminAssignmentForm('quizExplanation', this.value)">${state.adminAssignmentForm.quizExplanation || ""}</textarea></div>`
                                           : ""
                                       }
-                                      <div class="field" style="grid-column:1 / -1;"><label>Attachment (PDF / DOCX / PPT… optional)</label><input id="admin-assignment-attachment" type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.zip,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" /></div>
-                                      <div class="field" style="grid-column:1 / -1;"><label>Comment for this Assignment (optional)</label><textarea placeholder="Explain submission requirement or rubric..." oninput="updateAdminAssignmentForm('commentText', this.value)">${state.adminAssignmentForm.commentText || ""}</textarea></div>
+                                      <div class="field" style="grid-column:1 / -1;"><label>Attachment (optional — PDF, DOCX, PPT…)</label><input id="admin-assignment-attachment" type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.zip,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" /></div>
                                     </div>
-                                    <div class="button-row"><button class="button button-primary" onclick="saveAdminAssignment()">Set Assignment</button></div>
+                                    <div class="button-row"><button class="button button-primary" onclick="saveAdminAssignment()">Publish assignment</button></div>
                                   </article>`
                                 : ""
                             }
@@ -3065,7 +3057,7 @@ function adminPageContent() {
                               <strong>Assignments</strong>
                               ${courseAssignments
                                 .map(
-                                  (a) => `<div class="item"><div class="split"><span>${a.title}</span><small>${a.due || "No due date"}</small></div><div class="button-row"><button class="button button-secondary" onclick="deleteAdminAssignment('${a.id}')">Delete</button></div></div>`
+                                  (a) => `<div class="item"><div class="split"><span>${escapeHtml(a.title || "")}</span><small class="muted">${escapeHtml(a.due || "No due date")} · Posted ${escapeHtml(formatChatTime(a.publishAt || a.createdAt) || "—")}</small></div><div class="button-row"><button class="button button-secondary" onclick="deleteAdminAssignment('${a.id}')">Delete</button></div></div>`
                                 )
                                 .join("") || `<p class="muted">No assignments posted yet.</p>`}
                             </article>
@@ -3639,8 +3631,12 @@ function assignmentOverviewView() {
       <article class="card course-tab-card">
         <div class="split">
           <div>
-            <strong>${assignment.title}</strong>
-            <p class="muted file-meta">Type: ${assignment.type.toUpperCase()}</p>
+            <strong>${escapeHtml(assignment.title || "")}</strong>
+            <p class="muted file-meta">Type: ${assignment.type.toUpperCase()}${
+              assignment.publishAt || assignment.createdAt
+                ? ` · Posted ${escapeHtml(formatChatTime(assignment.publishAt || assignment.createdAt))}`
+                : ""
+            }</p>
           </div>
           <div class="split" style="gap:0.5rem;align-items:center;flex-wrap:wrap;">
             ${assignment.isPublished === false ? `<span class="pill" style="background:#e8e8f0;color:#444;">Scheduled</span>` : ""}
@@ -3667,27 +3663,31 @@ function assignmentOverviewView() {
   `;
 }
 
+function assignmentInstructionsFromAdmin(assignment) {
+  const text = String(assignment.instructions || "").trim();
+  if (!text) return "";
+  return `<div class="card assignment-admin-instructions"><h4>Assignment instructions</h4><div class="muted" style="white-space:pre-wrap;">${escapeHtml(text)}</div></div>`;
+}
+
 function renderAssignmentBody(assignment) {
   const submission = state.assignmentSubmissions[assignment.id];
   const locked = assignment.isPublished === false;
   const lockBanner = locked
     ? `<div class="card"><p class="muted"><strong>尚未发布。</strong>到达发布时间后可下载教师附件并提交；列表中可先看到作业标题与截止时间。</p></div>`
     : "";
+  const adminInstr = assignmentInstructionsFromAdmin(assignment);
   const attPath = assignment.attachmentPath || assignment.attachment_path;
   const attHref = resolvePublicApiUrl(attPath);
   let teacherAttachment = "";
   if (attPath) {
     if (locked) {
-      teacherAttachment = `<div class="card"><h4>Teacher file</h4><p class="muted">发布后可用。</p></div>`;
+      teacherAttachment = `<div class="card"><h4>Teacher attachment</h4><p class="muted">发布后可预览。</p></div>`;
     } else if (attPath.startsWith("/api/assignments/")) {
-      teacherAttachment = `<div class="card"><h4>Teacher file</h4><p><button type="button" class="button button-secondary" onclick="openAssignmentAttachment('${assignment.id}')">Open / download in new tab</button></p></div>`;
+      teacherAttachment = `<div class="card"><h4>Teacher attachment</h4><p><button type="button" class="button button-secondary" onclick="openAssignmentAttachment('${assignment.id}')">Preview attachment (new tab)</button></p></div>`;
     } else {
-      teacherAttachment = `<div class="card"><h4>Teacher file</h4><p><a class="button button-secondary" href="${escapeHtml(attHref)}" target="_blank" rel="noopener noreferrer">Download attachment</a></p></div>`;
+      teacherAttachment = `<div class="card"><h4>Teacher attachment</h4><p><a class="button button-secondary" href="${escapeHtml(attHref)}" target="_blank" rel="noopener noreferrer">Preview / download</a></p></div>`;
     }
   }
-  const rubricBlock = assignment.rubricTemplate
-    ? `<div class="card"><h4>Rubric</h4><p class="muted">${assignment.rubricTemplate}</p></div>`
-    : "";
   const submissionReceipt = submission
     ? `<div class="submission-receipt ${submission.isLate ? "submission-receipt-late" : "submission-receipt-ok"}">
          <strong>${submission.isLate ? "Submitted Late" : "Submitted Successfully"}</strong>
@@ -3704,10 +3704,11 @@ function renderAssignmentBody(assignment) {
     const remaining = timerSeconds > 0 ? Math.max(timerSeconds - elapsed, 0) : 0;
     const latestAttempt = state.quizHistoryByAssignment[assignment.id];
     return `
+      ${adminInstr}
       ${lockBanner}
       <div class="assignment-instruction">
-        <strong>Instructions</strong>
-        <p class="muted">Complete all MCQ questions and submit before timer ends.</p>
+        <strong>How to complete</strong>
+        <p class="muted">Complete all MCQ questions and submit before the timer ends (if any).</p>
       </div>
       ${
         timerSeconds > 0
@@ -3749,7 +3750,6 @@ function renderAssignmentBody(assignment) {
           : ""
       }
       ${teacherAttachment}
-      ${rubricBlock}
       ${submissionReceipt}
       ${commentsBlock(`${assignment.id}-comments`, "assignment", assignment.id)}
     `;
@@ -3757,10 +3757,11 @@ function renderAssignmentBody(assignment) {
 
   if (assignment.type === "upload") {
     return `
+      ${adminInstr}
       ${lockBanner}
       <div class="assignment-instruction">
-        <strong>Instructions</strong>
-        <p class="muted">Upload your project package and mark as done once final files are ready.</p>
+        <strong>How to complete</strong>
+        <p class="muted">Upload your project package and mark as done when your files are ready.</p>
       </div>
       <div class="card">
         <h4>Your submission</h4>
@@ -3777,18 +3778,18 @@ function renderAssignmentBody(assignment) {
         </div>
       </div>
       ${teacherAttachment}
-      ${rubricBlock}
       ${submissionReceipt}
       ${commentsBlock(`${assignment.id}-comments`, "assignment", assignment.id)}
     `;
   }
 
   return `
+    ${adminInstr}
     ${lockBanner}
     ${teacherAttachment}
     <div class="assignment-instruction">
-      <strong>Instructions</strong>
-      <p class="muted">Write a short reflection and submit when complete.</p>
+      <strong>How to complete</strong>
+      <p class="muted">Write your answer in the box below and submit when complete.</p>
     </div>
     <p>What did you learn today? Write down your review here.</p>
     <textarea placeholder="Type your answer here." ${locked ? "disabled " : ""}oninput="updateShortAnswerDraft('${assignment.id}', this.value)">${state.shortAnswerDrafts[assignment.id] || ""}</textarea>
@@ -3797,7 +3798,6 @@ function renderAssignmentBody(assignment) {
         ? `<p class="muted">提交将在作业发布后开放。</p>`
         : `<button class="button button-primary" onclick="submitAssignment('${assignment.id}', 'Short answer submission')">Submit</button>`
     }
-    ${rubricBlock}
     ${submissionReceipt}
     ${commentsBlock(`${assignment.id}-comments`, "assignment", assignment.id)}
   `;

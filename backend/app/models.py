@@ -51,6 +51,7 @@ class Assignment(db.Model):
     type = db.Column(db.String(50), nullable=False, default="short")
     due_at = db.Column(db.DateTime, nullable=True)
     publish_at = db.Column(db.DateTime, nullable=True)
+    instructions = db.Column(db.Text, nullable=True)
     rubric_template = db.Column(db.Text, nullable=True)
     quiz_payload = db.Column(db.Text, nullable=True)
     timer_seconds = db.Column(db.Integer, nullable=True)

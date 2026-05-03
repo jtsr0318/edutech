@@ -101,6 +101,7 @@ def create_app() -> Flask:
                         db.session.execute(text(ddl))
 
                 ensure_column("assignments", "publish_at", "ALTER TABLE assignments ADD COLUMN publish_at DATETIME NULL")
+                ensure_column("assignments", "instructions", "ALTER TABLE assignments ADD COLUMN instructions LONGTEXT NULL")
                 ensure_column("assignments", "rubric_template", "ALTER TABLE assignments ADD COLUMN rubric_template TEXT NULL")
                 ensure_column("assignments", "quiz_payload", "ALTER TABLE assignments ADD COLUMN quiz_payload LONGTEXT NULL")
                 ensure_column("assignments", "timer_seconds", "ALTER TABLE assignments ADD COLUMN timer_seconds INT NULL")
