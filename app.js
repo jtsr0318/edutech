@@ -3264,27 +3264,44 @@ function adminPageContent() {
                 .join("")
             : `<p class="muted">No uploaded materials yet.</p>`}
         </article>
+        
         <article class="card admin-surface">
-          <h3>Latest Assignments</h3>
-          ${(data.assignments || []).length
-            ? data.assignments
-                .slice(0, 6)
-                .map((a) => `<div class="item"><strong>${a.title}</strong><p class="muted">${a.type.toUpperCase()} · ${a.due || "No due date"}</p></div>`)
-                .join("")
-            : `<p class="muted">No assignments yet.</p>`}
-        </article>
-        <article class="card admin-surface">
-          <h3>Recent Announcements</h3>
-          ${(data.announcements || []).length
-            ? data.announcements
-                .slice(0, 6)
-                .map(
-                  (a) =>
-                    `<div class="item"><strong>${escapeHtml(a.title || "")}</strong><p class="muted">${escapeHtml(postedTimeMalaysia(a.createdAt) || a.meta || "")}</p></div>`
-                )
-                .join("")
-            : `<p class="muted">No announcements yet.</p>`}
-        </article>
+  <h3>Latest Assignments</h3>
+  ${(data.assignments || []).length
+    ? data.assignments
+        .slice(0, 6)
+        .map((a) => {
+          const cn =
+            (data.courses || []).find((c) => String(c.id) === String(a.courseId))?.name || `Course ${a.courseId}`;
+          return `<div class="item">
+            <strong>${escapeHtml(a.title || "")}</strong>
+            <p class="muted">
+              ${escapeHtml(cn)} · ${escapeHtml(String(a.type || "").toUpperCase())} · ${escapeHtml(a.due || "No due date")}
+            </p>
+          </div>`;
+        })
+        .join("")
+    : `<p class="muted">No assignments yet.</p>`}
+</article>
+        
+<article class="card admin-surface">
+  <h3>Recent Announcements</h3>
+  ${(data.announcements || []).length
+    ? data.announcements
+        .slice(0, 6)
+        .map((a) => {
+          const cn =
+            (data.courses || []).find((c) => String(c.id) === String(a.courseId))?.name || `Course ${a.courseId}`;
+          return `<div class="item">
+            <strong>${escapeHtml(a.title || "")}</strong>
+            <p class="muted">
+              ${escapeHtml(cn)} · ${escapeHtml(postedTimeMalaysia(a.createdAt) || a.meta || "")}
+            </p>
+          </div>`;
+        })
+        .join("")
+    : `<p class="muted">No announcements yet.</p>`}
+</article>
       </section>
     `;
   }
