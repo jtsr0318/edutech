@@ -24,6 +24,7 @@ const state = {
   adminCourseForm: { id: "", name: "", lecturerName: "" },
   adminStreamCourseId: "",
   adminEnrollments: [],
+  adminAssignmentSubmissions: {},
   adminMaterialForm: { courseId: "", name: "", commentText: "" },
   adminAnnouncementForm: { courseId: "", title: "", text: "" },
   adminAssignmentForm: {
@@ -1094,6 +1095,74 @@ async function adminFetchEnrollments(courseId) {
   }
   const payload = await apiRequest(`/admin/courses/${encodeURIComponent(courseId)}/enrollments`);
   state.adminEnrollments = payload.items || [];
+}
+
+async function adminFetchAssignmentSubmissions(assignmentId) {
+  const payload = await apiRequest(`/admin/assignments/${encodeURIComponent(assignmentId)}/submissions`);
+  state.adminAssignmentSubmissions[String(assignmentId)] = payload.items || [];
+}
+
+async function toggleAdminAssignmentSubmissions(assignmentId) {
+  const key = String(assignmentId);
+
+  if (Object.prototype.hasOwnProperty.call(state.adminAssignmentSubmissions, key)) {
+    delete state.adminAssignmentSubmissions[key];
+    render();
+    return;
+  }
+
+  try {
+    await adminFetchAssignmentSubmissions(assignmentId);
+    render();
+  } catch (err) {
+    pushToast("error", err.message || "Failed to load assignment submissions.");
+  }
+}
+
+async function adminOpenStudentSubmissionFile(assignmentId, userId) {
+  try {
+    const blob = await fetchAuthorizedBinary(`/admin/assignments/${encodeURIComponent(assignmentId)}/submissions/${encodeURIComponent(userId)}/file`);
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank", "noopener,noreferrer");
+    setTimeout(() => URL.revokeObjectURL(url), 180000);
+  } catch (err) {
+    pushToast("error", err.message || "Could not open student file.");
+  }
+}
+
+async function adminDownloadStudentSubmissionFile(assignmentId, userId, fileName) {
+  try {
+    const blob = await fetchAuthorizedBinary(`/admin/assignments/${encodeURIComponent(assignmentId)}/submissions/${encodeURIComponent(userId)}/file`);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName || `student-submission-${assignmentId}-${userId}`;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 120000);
+  } catch (err) {
+    pushToast("error", err.message || "Could not download student file.");
+  }
+}
+
+async function adminRemoveStudentSubmission(assignmentId, userId) {
+  if (!window.confirm("Remove this student's uploaded file and unlock resubmission?")) return;
+
+  try {
+    await apiRequest(`/admin/assignments/${encodeURIComponent(assignmentId)}/submissions/${encodeURIComponent(userId)}`, {
+      method: "DELETE",
+    });
+
+    await adminFetchAssignmentSubmissions(assignmentId);
+    await loadDataDrivenCollections();
+
+    pushToast("success", "Student submission unlocked.");
+    render();
+  } catch (err) {
+    pushToast("error", err.message || "Failed to unlock student submission.");
+  }
 }
 
 function setAdminStreamCourse(courseId) {
@@ -3383,10 +3452,63 @@ function adminPageContent() {
                             <article class="card admin-surface" style="grid-column:1 / -1;">
                               <strong>Assignments</strong>
                               ${courseAssignments
-                                .map(
-                                  (a) => `<div class="item"><div class="split"><span>${escapeHtml(a.title || "")}</span><small class="muted">${escapeHtml(postedTimeMalaysia(a.createdAt) || "")}${a.due ? ` · Due ${escapeHtml(a.due)}` : ""}</small></div><div class="button-row"><button class="button button-secondary" onclick="deleteAdminAssignment('${a.id}')">Delete</button></div></div>`
-                                )
-                                .join("") || `<p class="muted">No assignments posted yet.</p>`}
+  .map((a) => {
+    const submissions = state.adminAssignmentSubmissions[String(a.id)] || [];
+    const submissionsOpen = Object.prototype.hasOwnProperty.call(
+      state.adminAssignmentSubmissions,
+      String(a.id)
+    );
+
+    return `<div class="item">
+      <div class="split">
+        <span>${escapeHtml(a.title || "")}</span>
+        <small class="muted">${escapeHtml(postedTimeMalaysia(a.createdAt) || "")}${a.due ? ` · Due ${escapeHtml(a.due)}` : ""}</small>
+      </div>
+
+      <div class="button-row">
+        <button class="button button-secondary" onclick="toggleAdminAssignmentSubmissions('${a.id}')">
+          ${submissionsOpen ? "Hide Submissions" : "View Submissions"}
+        </button>
+        <button class="button button-secondary" onclick="deleteAdminAssignment('${a.id}')">Delete</button>
+      </div>
+
+      ${
+        submissionsOpen
+          ? `<div class="admin-submission-list">
+              ${
+                submissions.length
+                  ? submissions
+                      .map(
+                        (s) => `<div class="item admin-submission-row">
+                          <div>
+                            <strong>${escapeHtml(s.name || "Student")}</strong>
+                            <p class="muted">${escapeHtml(s.email || "")}</p>
+                            <p class="muted">
+                              ${s.submitted ? `Submitted ${escapeHtml(formatMalaysiaDateTime(s.submittedAt) || "")}` : "Not submitted"}
+                              ${s.fileName ? ` · File: ${escapeHtml(s.fileName)}` : ""}
+                            </p>
+                          </div>
+
+                          <div class="button-row">
+                            ${
+                              s.hasUpload
+                                ? `<button class="button button-secondary" onclick="adminOpenStudentSubmissionFile('${a.id}', '${s.userId}')">View</button>
+                                   <button class="button button-secondary" onclick="adminDownloadStudentSubmissionFile('${a.id}', '${s.userId}', ${JSON.stringify(s.fileName || "")})">Download</button>
+                                   <button class="button button-secondary" onclick="adminRemoveStudentSubmission('${a.id}', '${s.userId}')">Remove / Unlock</button>`
+                                : `<span class="muted">No file</span>`
+                            }
+                          </div>
+                        </div>`
+                      )
+                      .join("")
+                  : `<p class="muted">No enrolled students found for this assignment.</p>`
+              }
+            </div>`
+          : ""
+      }
+    </div>`;
+  })
+  .join("") || `<p class="muted">No assignments posted yet.</p>`}
                             </article>
                           </div>
                         </section>
