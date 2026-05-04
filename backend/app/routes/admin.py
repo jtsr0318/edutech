@@ -5,12 +5,26 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from flask import Blueprint, current_app, g, request
+from flask import Blueprint, Response, current_app, g, request
 from werkzeug.utils import secure_filename
 
 from ..auth import require_auth
 from ..extensions import db
-from ..models import Announcement, Assignment, Book, ContentComment, Course, Enrollment, ForumPost, ForumReply, Material, Order, User
+from ..models import (
+    Announcement,
+    Assignment,
+    AssignmentStudentUpload,
+    Book,
+    ContentComment,
+    Course,
+    Enrollment,
+    ForumPost,
+    ForumReply,
+    Material,
+    Order,
+    Submission,
+    User,
+)
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -575,6 +589,130 @@ def delete_announcement(announcement_id):
     db.session.commit()
     return {"status": "success"}
 
+@admin_bp.get("/admin/assignments/<int:assignment_id>/submissions")
+@require_auth(role="admin")
+def list_assignment_submissions(assignment_id):
+    assignment = Assignment.query.get(assignment_id)
+    if not assignment:
+        return {"message": "Assignment not found"}, 404
+
+    rows = (
+        db.session.query(User, Enrollment)
+        .join(Enrollment, User.id == Enrollment.user_id)
+        .filter(Enrollment.course_id == assignment.course_id)
+        .order_by(User.name.asc())
+        .all()
+    )
+
+    user_ids = [u.id for u, _e in rows]
+
+    submissions = {}
+    uploads = {}
+
+    if user_ids:
+        for sub in Submission.query.filter(
+            Submission.assignment_id == assignment_id,
+            Submission.user_id.in_(user_ids),
+        ).all():
+            submissions[int(sub.user_id)] = sub
+
+        for upl in AssignmentStudentUpload.query.filter(
+            AssignmentStudentUpload.assignment_id == assignment_id,
+            AssignmentStudentUpload.user_id.in_(user_ids),
+        ).all():
+            uploads[int(upl.user_id)] = upl
+
+    items = []
+    for user, _enrollment in rows:
+        sub = submissions.get(int(user.id))
+        upl = uploads.get(int(user.id))
+
+        items.append(
+            {
+                "userId": user.id,
+                "name": user.name,
+                "email": user.email,
+                "submitted": bool(sub),
+                "submittedAt": sub.submitted_at.isoformat() if sub else None,
+                "status": sub.status if sub else "",
+                "sourceLabel": sub.source_label if sub else "",
+                "hasUpload": bool(upl and upl.file_blob),
+                "fileName": upl.file_name if upl else "",
+                "updatedAt": upl.updated_at.isoformat() if upl and upl.updated_at else None,
+            }
+        )
+
+    return {
+        "assignment": {
+            "id": assignment.id,
+            "title": assignment.title,
+            "type": assignment.type,
+            "courseId": assignment.course_id,
+        },
+        "items": items,
+    }
+
+
+@admin_bp.get("/admin/assignments/<int:assignment_id>/submissions/<int:user_id>/file")
+@require_auth(role="admin")
+def admin_download_student_upload(assignment_id, user_id):
+    assignment = Assignment.query.get(assignment_id)
+    if not assignment:
+        return {"message": "Assignment not found"}, 404
+
+    upload = AssignmentStudentUpload.query.filter_by(
+        assignment_id=assignment_id,
+        user_id=user_id,
+    ).first()
+
+    if not upload or not upload.file_blob:
+        return {"message": "No uploaded file found."}, 404
+
+    filename = (upload.file_name or f"submission-{assignment_id}-{user_id}").replace('"', "'")[:200]
+
+    return Response(
+        upload.file_blob,
+        mimetype=upload.file_mime or "application/octet-stream",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
+@admin_bp.delete("/admin/assignments/<int:assignment_id>/submissions/<int:user_id>")
+@require_auth(role="admin")
+def admin_remove_student_submission(assignment_id, user_id):
+    assignment = Assignment.query.get(assignment_id)
+    if not assignment:
+        return {"message": "Assignment not found"}, 404
+
+    upload = AssignmentStudentUpload.query.filter_by(
+        assignment_id=assignment_id,
+        user_id=user_id,
+    ).first()
+
+    submission = Submission.query.filter_by(
+        assignment_id=assignment_id,
+        user_id=user_id,
+    ).first()
+
+    removed_upload = False
+    removed_submission = False
+
+    if upload:
+        db.session.delete(upload)
+        removed_upload = True
+
+    if submission:
+        db.session.delete(submission)
+        removed_submission = True
+
+    db.session.commit()
+
+    return {
+        "status": "success",
+        "removedUpload": removed_upload,
+        "removedSubmission": removed_submission,
+        "message": "Student submission has been unlocked.",
+    }
 
 @admin_bp.delete("/admin/assignments/<int:assignment_id>")
 @require_auth(role="admin")
