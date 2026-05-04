@@ -22,6 +22,7 @@ const state = {
   adminSelectedChatUserId: "",
   adminChatMessages: [],
   adminChatDraft: "",
+  adminChatReadCounts: {},
   adminCourseForm: { id: "", name: "", lecturerName: "" },
   adminStreamCourseId: "",
   adminEnrollments: [],
@@ -1724,12 +1725,30 @@ async function sendSupportMessage() {
   }
 }
 
+function getAdminChatUnreadCount(user) {
+  const userId = String(user.id);
+  const total = Number(user.messageCount || 0);
+  const read = Number(state.adminChatReadCounts[userId] || 0);
+  return Math.max(0, total - read);
+}
+
+function markAdminChatAsRead(userId) {
+  const id = String(userId);
+  const user = (state.adminChatUsers || []).find((u) => String(u.id) === id);
+  if (!user) return;
+  state.adminChatReadCounts[id] = Number(user.messageCount || 0);
+}
+
 async function selectAdminChatUser(userId) {
   state.adminSelectedChatUserId = String(userId);
+  markAdminChatAsRead(userId);
+
   state.adminLoading = true;
   render();
+
   try {
     await adminFetchSelectedChatMessages();
+    state.adminChatReadCounts[String(userId)] = (state.adminChatMessages || []).length;
   } catch (err) {
     state.adminError = err.message || "Failed to load user chat.";
   } finally {
@@ -3740,15 +3759,25 @@ function adminPageContent() {
       <section class="card admin-chat-layout admin-surface">
         <aside class="admin-chat-users">
           <h3>Student Conversations</h3>
-          ${(state.adminChatUsers || [])
-            .map(
-              (u) => `
-              <button class="course-pill ${String(u.id) === String(state.adminSelectedChatUserId) ? "course-pill-active" : ""}" onclick="selectAdminChatUser('${u.id}')">
-                <strong>${u.name || u.email || "Student"}</strong>
-                <small class="muted">${u.email || ""}</small>
-              </button>`
-            )
-            .join("") || `<p class="muted">No conversations yet.</p>`}
+${(state.adminChatUsers || [])
+  .map((u) => {
+    const unread = getAdminChatUnreadCount(u);
+
+    return `
+      <button class="course-pill ${String(u.id) === String(state.adminSelectedChatUserId) ? "course-pill-active" : ""}" onclick="selectAdminChatUser('${u.id}')">
+        <span class="admin-chat-user-main">
+          <strong>${escapeHtml(u.name || u.email || "Student")}</strong>
+          <small class="muted">${escapeHtml(u.email || "")}</small>
+        </span>
+
+        ${
+          unread > 0
+            ? `<span class="admin-chat-unread-badge">${unread}</span>`
+            : ""
+        }
+      </button>`;
+  })
+  .join("") || `<p class="muted">No student conversations yet.</p>`}
         </aside>
         <div class="admin-chat-main">
           <div class="split">
