@@ -4923,6 +4923,32 @@ function profileView() {
           </div>
           <button class="button button-secondary" onclick="updateSettings()">Update Settings</button>
         </div>
+
+        <div class="card" style="grid-column:1 / -1;">
+          <h3>My Purchase History</h3>
+          ${(state.userScoped.orders || []).length
+            ? state.userScoped.orders
+                .map(
+                  (o) => `<div class="item">
+                    <div class="split">
+                      <strong>Order #${escapeHtml(o.id)}</strong>
+                      <strong>RM ${Number(o.total || 0).toFixed(2)}</strong>
+                    </div>
+                    <p class="muted">${escapeHtml(formatMalaysiaDateTime(o.createdAt) || "")}</p>
+                    <p class="muted">
+                      ${
+                        (o.items || []).length
+                          ? o.items
+                              .map((item) => `${escapeHtml(item.title || "Item")} x${escapeHtml(item.qty || 1)}`)
+                              .join(" · ")
+                          : "No item details"
+                      }
+                    </p>
+                  </div>`
+                )
+                .join("")
+            : `<p class="muted">No purchases yet.</p>`}
+        </div>
       </section>
     </div>
   `;
