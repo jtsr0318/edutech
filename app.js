@@ -292,6 +292,21 @@ async function downloadMyStudentAssignmentUpload(assignmentId, downloadName) {
   }
 }
 
+async function viewMyStudentAssignmentUpload(assignmentId) {
+  const id = String(assignmentId);
+
+  try {
+    const blob = await fetchAuthorizedBinary(`/assignments/${encodeURIComponent(id)}/student-upload`);
+    const url = URL.createObjectURL(blob);
+
+    window.open(url, "_blank", "noopener,noreferrer");
+
+    setTimeout(() => URL.revokeObjectURL(url), 180000);
+  } catch (err) {
+    pushToast("error", err.message || "Could not open your uploaded file.");
+  }
+}
+
 async function deleteMyStudentAssignmentUpload(assignmentId) {
   const id = String(assignmentId);
 
@@ -4132,37 +4147,53 @@ function renderAssignmentWorkCard(assignment) {
   const subLine = assignment.type === "mcq" ? "" : assignmentSubmissionLineCard(submission);
   const discuss = commentsBlockEmbedded(key, "assignment", assignment.id);
 
-  if (assignment.type === "upload") {
-    const su = assignment.studentUpload;
-    const uploadedHint =
-    su && String(su.fileName || "").trim()
-    ? `<div class="muted assignment-upload-pick">
-        <span>Uploaded: <strong>${escapeHtml(su.fileName)}</strong>${su.updatedAt ? ` · ${escapeHtml(formatMalaysiaDateTime(su.updatedAt) || "")}` : ""}</span>
-        <button type="button" class="button button-secondary" onclick="downloadMyStudentAssignmentUpload('${assignment.id}', ${JSON.stringify(su.fileName)})">Download my file</button>
-        <button type="button" class="button button-secondary" onclick="deleteMyStudentAssignmentUpload('${assignment.id}')">Remove file</button>
-      </div>`
-    : "";
-    return `<article class="card course-tab-card assignment-classroom-card">
-      ${header}
-      ${instr}
-      ${strip}
-      <div class="assignment-classroom-actions">
-        ${
-          locked
-            ? `<p class="muted">This assignment is not available yet.</p>`
-            : `<input type="file" id="student-assignment-upload-${assignment.id}" class="assignment-file-input-hidden" onchange="onStudentAssignmentUploadPick('${assignment.id}', this)" />
-        <button type="button" class="button button-primary" onclick="triggerStudentAssignmentUploadPick('${assignment.id}')">
-          ${su && String(su.fileName || "").trim() ? "Replace File" : "Upload"}
-        </button>
-        <button type="button" class="button button-secondary" onclick="submitAssignment('${assignment.id}', 'Mark as Done')">Mark as Done</button>`
-        }
-      </div>
-      ${uploadedHint}
-      ${subLine}
-      ${discuss}
-    </article>`;
-  }
+if (assignment.type === "upload") {
+  const su = assignment.studentUpload;
+  const isSubmitted = !!assignment.submission;
+  const hasUpload = su && String(su.fileName || "").trim();
 
+  const uploadedHint =
+    hasUpload
+      ? `<div class="muted assignment-upload-pick">
+          <span>Uploaded: <strong>${escapeHtml(su.fileName)}</strong>${su.updatedAt ? ` · ${escapeHtml(formatMalaysiaDateTime(su.updatedAt) || "")}` : ""}</span>
+
+          <button type="button" class="button button-secondary" onclick="viewMyStudentAssignmentUpload('${assignment.id}')">
+            View my file
+          </button>
+
+          ${
+            !isSubmitted
+              ? `<button type="button" class="button button-secondary" onclick="deleteMyStudentAssignmentUpload('${assignment.id}')">
+                  Remove file
+                </button>`
+              : `<span class="category-label">Locked after submission</span>`
+          }
+        </div>`
+      : "";
+
+  return `<article class="card course-tab-card assignment-classroom-card">
+    ${header}
+    ${instr}
+    ${strip}
+    <div class="assignment-classroom-actions">
+      ${
+        locked
+          ? `<p class="muted">This assignment is not available yet.</p>`
+          : !isSubmitted
+            ? `<input type="file" id="student-assignment-upload-${assignment.id}" class="assignment-file-input-hidden" onchange="onStudentAssignmentUploadPick('${assignment.id}', this)" />
+              <button type="button" class="button button-primary" onclick="triggerStudentAssignmentUploadPick('${assignment.id}')">
+                ${hasUpload ? "Replace File" : "Upload"}
+              </button>
+              <button type="button" class="button button-secondary" onclick="submitAssignment('${assignment.id}', 'Mark as Done')">Mark as Done</button>`
+            : `<span class="category-label">Submitted</span>`
+      }
+    </div>
+    ${uploadedHint}
+    ${subLine}
+    ${discuss}
+  </article>`;
+}
+  
   if (assignment.type === "mcq") {
     const payload =
       assignment.quizPayload && Array.isArray(assignment.quizPayload.questions) ? assignment.quizPayload : { questions: [] };
