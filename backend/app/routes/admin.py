@@ -370,6 +370,37 @@ def delete_course(course_id):
     db.session.commit()
     return {"status": "success"}
 
+@admin_bp.get("/admin/orders")
+@require_auth(role="admin")
+def admin_orders():
+    rows = (
+        db.session.query(Order, User)
+        .join(User, Order.user_id == User.id)
+        .order_by(Order.created_at.desc())
+        .all()
+    )
+
+    items = []
+    for order, user in rows:
+        details = {}
+        try:
+            details = json.loads(order.details_json or "{}")
+        except Exception:
+            details = {}
+
+        items.append(
+            {
+                "id": order.id,
+                "userId": user.id,
+                "customerName": user.name,
+                "customerEmail": user.email,
+                "total": float(order.total or 0),
+                "createdAt": order.created_at.isoformat() if order.created_at else None,
+                "items": details.get("items", []),
+            }
+        )
+
+    return {"items": items}
 
 @admin_bp.get("/admin/books")
 @require_auth(role="admin")
