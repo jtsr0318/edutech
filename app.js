@@ -14,6 +14,7 @@ const state = {
   adminStats: null,
   adminCourses: [],
   adminBooks: [],
+  adminOrders: [],
   adminForumPosts: [],
   adminUsers: [],
   adminUserForm: { id: "", name: "", email: "", role: "user" },
@@ -2067,6 +2068,7 @@ function logout() {
   state.adminStats = null;
   state.adminCourses = [];
   state.adminBooks = [];
+  state.adminOrders = [];
   state.adminForumPosts = [];
   state.adminUsers = [];
   state.adminChatUsers = [];
@@ -2338,6 +2340,11 @@ async function adminFetchBooks() {
   state.adminBooks = Array.isArray(payload) ? payload : payload.items || [];
 }
 
+async function adminFetchOrders() {
+  const payload = await apiRequest("/admin/orders");
+  state.adminOrders = Array.isArray(payload) ? payload : payload.items || [];
+}
+
 async function adminFetchForumPosts() {
   const payload = await apiRequest("/admin/forum-posts");
   state.adminForumPosts = Array.isArray(payload) ? payload : payload.items || [];
@@ -2370,7 +2377,10 @@ async function refreshAdminPageData() {
     await loadDataDrivenCollections();
     if (state.adminPage === "dashboard") await adminFetchStats();
     if (state.adminPage === "courses") await adminFetchCourses();
-    if (state.adminPage === "books") await adminFetchBooks();
+    if (state.adminPage === "books") {
+      await adminFetchBooks();
+      await adminFetchOrders();
+    }
     if (state.adminPage === "forum") await adminFetchForumPosts();
     if (state.adminPage === "users") await adminFetchUsers();
     if (state.adminPage === "support") {
@@ -3601,6 +3611,42 @@ function adminPageContent() {
           <div class="admin-book-list" id="admin-book-list">
             ${visibleBooks.map((b) => adminBookCatalogRowHtml(b)).join("") || `<p class="muted">No books found for this search.</p>`}
           </div>
+        </article>
+                <article class="card admin-surface" style="grid-column:1 / -1;">
+          <h3>Recent Orders</h3>
+          ${(state.adminOrders || []).length
+            ? state.adminOrders
+                .map(
+                  (o) => `<div class="item">
+                    <div class="split">
+                      <div>
+                        <strong>Order #${escapeHtml(o.id)}</strong>
+                        <p class="muted">${escapeHtml(o.customerName || "Customer")} · ${escapeHtml(o.customerEmail || "")}</p>
+                        <p class="muted">${escapeHtml(formatMalaysiaDateTime(o.createdAt) || "")}</p>
+                      </div>
+                      <strong>Total: RM ${Number(o.total || 0).toFixed(2)}</strong>
+                    </div>
+
+                    <div class="purchase-items">
+                      ${
+                        (o.items || []).length
+                          ? o.items
+                              .map(
+                                (item) => `<div class="item">
+                                  <strong>${escapeHtml(item.title || "Item")}</strong>
+                                  <p class="muted">
+                                    Quantity: ${escapeHtml(item.qty || 1)} · Unit Price: RM ${Number(item.price || 0).toFixed(2)}
+                                  </p>
+                                </div>`
+                              )
+                              .join("")
+                          : `<p class="muted">No item details</p>`
+                      }
+                    </div>
+                  </div>`
+                )
+                .join("")
+            : `<p class="muted">No orders yet.</p>`}
         </article>
       </section>
     `;
