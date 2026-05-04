@@ -4868,6 +4868,33 @@ function bookstoreView() {
         </div>
         <button class="button button-primary" onclick="checkoutCart()">Checkout</button>
       </aside>
+      <aside class="card">
+  <h3>Recent Purchase</h3>
+  ${
+    (state.userScoped.orders || []).length
+      ? (() => {
+          const o = state.userScoped.orders[0];
+          return `<div class="item">
+            <div class="split">
+              <strong>Order #${escapeHtml(o.id)}</strong>
+              <strong>RM ${Number(o.total || 0).toFixed(2)}</strong>
+            </div>
+            <p class="muted">${escapeHtml(formatMalaysiaDateTime(o.createdAt) || "")}</p>
+            <p class="muted">
+              ${
+                (o.items || []).length
+                  ? o.items
+                      .map((item) => `${escapeHtml(item.title || "Item")} x${escapeHtml(item.qty || 1)}`)
+                      .join(" · ")
+                  : "No item details"
+              }
+            </p>
+            <button class="button button-secondary" onclick="setPostLoginPage('profile')">View History</button>
+          </div>`;
+        })()
+      : `<p class="muted">No purchases yet.</p>`
+  }
+</aside>
     </section>
     </div>
   `;
