@@ -1113,6 +1113,15 @@ async function toggleAdminAssignmentSubmissions(assignmentId) {
 
   try {
     await adminFetchAssignmentSubmissions(assignmentId);
+
+    const assignment = (data.assignments || []).find(
+      (a) => String(a.id) === String(assignmentId)
+    );
+
+    if (assignment?.courseId) {
+      await adminFetchEnrollments(String(assignment.courseId));
+    }
+
     render();
   } catch (err) {
     pushToast("error", err.message || "Failed to load assignment submissions.");
