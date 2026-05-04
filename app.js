@@ -2432,10 +2432,6 @@ async function updateSettingsApi() {
 
 function setCourseFilter(value) {
   state.courseFilter = value;
-  if (state.postLoginPage === "courses") {
-    renderCoursesListOnly();
-    return;
-  }
   render();
 }
 
