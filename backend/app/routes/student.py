@@ -625,6 +625,14 @@ def delete_assignment_student_upload(assignment_id):
     if assignment.course_id not in _enrolled_course_ids(g.current_user.id):
         return {"message": "Not enrolled in this course."}, 403
 
+    existing_submission = Submission.query.filter_by(
+        assignment_id=assignment_id,
+        user_id=g.current_user.id
+    ).first()
+
+    if existing_submission:
+        return {"message": "Submitted assignment is locked. Please contact admin to remove the upload."}, 403
+
     row = AssignmentStudentUpload.query.filter_by(
         assignment_id=assignment_id,
         user_id=g.current_user.id
@@ -637,7 +645,7 @@ def delete_assignment_student_upload(assignment_id):
     db.session.commit()
 
     return {"status": "success", "message": "Uploaded file removed."}
-
+    
 @student_bp.get("/comments")
 @require_auth()
 def list_comments():
