@@ -292,6 +292,26 @@ async function downloadMyStudentAssignmentUpload(assignmentId, downloadName) {
   }
 }
 
+async function deleteMyStudentAssignmentUpload(assignmentId) {
+  const id = String(assignmentId);
+
+  if (!window.confirm("Remove your uploaded file for this assignment?")) {
+    return;
+  }
+
+  try {
+    await apiRequest(`/assignments/${encodeURIComponent(id)}/student-upload`, {
+      method: "DELETE",
+    });
+
+    await refreshAssignmentsListOnly();
+    pushToast("success", "Uploaded file removed.");
+    render();
+  } catch (err) {
+    pushToast("error", err.message || "Failed to remove uploaded file.");
+  }
+}
+
 async function openMaterialFromApi(materialId) {
   try {
     const blob = await fetchAuthorizedBinary(`/materials/${encodeURIComponent(materialId)}/file`);
@@ -4115,10 +4135,13 @@ function renderAssignmentWorkCard(assignment) {
   if (assignment.type === "upload") {
     const su = assignment.studentUpload;
     const uploadedHint =
-      su && String(su.fileName || "").trim()
-        ? `<div class="muted assignment-upload-pick"><span>Uploaded: <strong>${escapeHtml(su.fileName)}</strong>${su.updatedAt ? ` · ${escapeHtml(formatMalaysiaDateTime(su.updatedAt) || "")}` : ""}</span>
-        <button type="button" class="button button-secondary" onclick="downloadMyStudentAssignmentUpload('${assignment.id}', ${JSON.stringify(su.fileName)})">Download my file</button></div>`
-        : "";
+    su && String(su.fileName || "").trim()
+    ? `<div class="muted assignment-upload-pick">
+        <span>Uploaded: <strong>${escapeHtml(su.fileName)}</strong>${su.updatedAt ? ` · ${escapeHtml(formatMalaysiaDateTime(su.updatedAt) || "")}` : ""}</span>
+        <button type="button" class="button button-secondary" onclick="downloadMyStudentAssignmentUpload('${assignment.id}', ${JSON.stringify(su.fileName)})">Download my file</button>
+        <button type="button" class="button button-secondary" onclick="deleteMyStudentAssignmentUpload('${assignment.id}')">Remove file</button>
+      </div>`
+    : "";
     return `<article class="card course-tab-card assignment-classroom-card">
       ${header}
       ${instr}
@@ -4128,7 +4151,9 @@ function renderAssignmentWorkCard(assignment) {
           locked
             ? `<p class="muted">This assignment is not available yet.</p>`
             : `<input type="file" id="student-assignment-upload-${assignment.id}" class="assignment-file-input-hidden" onchange="onStudentAssignmentUploadPick('${assignment.id}', this)" />
-        <button type="button" class="button button-primary" onclick="triggerStudentAssignmentUploadPick('${assignment.id}')">Upload</button>
+        <button type="button" class="button button-primary" onclick="triggerStudentAssignmentUploadPick('${assignment.id}')">
+          ${su && String(su.fileName || "").trim() ? "Replace File" : "Upload"}
+        </button>
         <button type="button" class="button button-secondary" onclick="submitAssignment('${assignment.id}', 'Mark as Done')">Mark as Done</button>`
         }
       </div>
