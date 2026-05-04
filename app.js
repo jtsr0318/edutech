@@ -237,6 +237,21 @@ async function onStudentAssignmentUploadPick(assignmentId, input) {
   }
 }
 
+async function openAssignmentAttachment(assignmentId) {
+  const id = String(assignmentId);
+
+  try {
+    const blob = await fetchAuthorizedBinary(`/assignments/${encodeURIComponent(id)}/attachment`);
+    const url = URL.createObjectURL(blob);
+
+    window.open(url, "_blank", "noopener,noreferrer");
+
+    setTimeout(() => URL.revokeObjectURL(url), 180000);
+  } catch (err) {
+    pushToast("error", err.message || "Could not open attachment.");
+  }
+}
+
 async function downloadAssignmentAttachment(assignmentId) {
   const id = String(assignmentId);
   try {
@@ -4015,24 +4030,34 @@ function assignmentTeacherStrip(assignment, locked) {
   if (!attPath || !String(attPath).trim()) {
     return "";
   }
+
   const id = String(assignment.id);
   const attHref = resolvePublicApiUrl(attPath);
+
   if (locked) {
     return `<div class="assignment-material-strip muted"><span>Teacher file — not available yet</span></div>`;
   }
+
   if (attPath.startsWith("/api/assignments/")) {
     return `<div class="assignment-material-strip">
       <div class="assignment-material-strip-main">
         <span class="assignment-material-name">Teacher attachment</span>
       </div>
-      <button type="button" class="button button-secondary" onclick="downloadAssignmentAttachment('${id}')">Download</button>
+      <div class="button-row">
+        <button type="button" class="button button-secondary" onclick="openAssignmentAttachment('${id}')">View File</button>
+        <button type="button" class="button button-secondary" onclick="downloadAssignmentAttachment('${id}')">Download</button>
+      </div>
     </div>`;
   }
+
   return `<div class="assignment-material-strip">
     <div class="assignment-material-strip-main">
       <span class="assignment-material-name">Teacher attachment</span>
     </div>
-    <a class="button button-secondary" href="${escapeHtml(attHref)}" download rel="noopener noreferrer">Download</a>
+    <div class="button-row">
+      <a class="button button-secondary" href="${escapeHtml(attHref)}" target="_blank" rel="noopener noreferrer">View File</a>
+      <a class="button button-secondary" href="${escapeHtml(attHref)}" download rel="noopener noreferrer">Download</a>
+    </div>
   </div>`;
 }
 
