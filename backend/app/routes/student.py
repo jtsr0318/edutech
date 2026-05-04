@@ -176,24 +176,24 @@ def me_data():
     )
     cart_payload = {book.title: row.qty for row, book in cart_rows}
 
-orders = Order.query.filter_by(user_id=g.current_user.id).order_by(Order.created_at.desc()).all()
+    orders = Order.query.filter_by(user_id=g.current_user.id).order_by(Order.created_at.desc()).all()
 
-orders_payload = []
-for item in orders:
-    details = {}
-    try:
-        details = json.loads(item.details_json or "{}")
-    except Exception:
+    orders_payload = []
+    for item in orders:
         details = {}
+        try:
+            details = json.loads(item.details_json or "{}")
+        except Exception:
+            details = {}
 
-    orders_payload.append(
-        {
-            "id": item.id,
-            "total": _to_float(item.total),
-            "createdAt": item.created_at.isoformat() if item.created_at else None,
-            "items": details.get("items", []),
-        }
-    )
+        orders_payload.append(
+            {
+                "id": item.id,
+                "total": _to_float(item.total),
+                "createdAt": item.created_at.isoformat() if item.created_at else None,
+                "items": details.get("items", []),
+            }
+        )
 
     return {
         "progressByCourse": progress_by_course,
