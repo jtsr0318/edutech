@@ -3263,9 +3263,9 @@ function adminPageContent() {
                                       <div class="field"><label>Assignment Title</label><input value="${state.adminAssignmentForm.title}" oninput="updateAdminAssignmentForm('title', this.value)" /></div>
                                       <div class="field"><label>Assignment Type</label>
                                         <select onchange="updateAdminAssignmentForm('type', this.value)">
-                                          <option value="short" ${state.adminAssignmentForm.type === "short" ? "selected" : ""}>Short</option>
-                                          <option value="mcq" ${state.adminAssignmentForm.type === "mcq" ? "selected" : ""}>MCQ</option>
-                                          <option value="upload" ${state.adminAssignmentForm.type === "upload" ? "selected" : ""}>Upload</option>
+                                          <option value="short" ${state.adminAssignmentForm.type === "short" ? "selected" : ""}>Written Answer</option>
+                                          <option value="mcq" ${state.adminAssignmentForm.type === "mcq" ? "selected" : ""}>Multiple Choice Quiz</option>
+                                          <option value="upload" ${state.adminAssignmentForm.type === "upload" ? "selected" : ""}>File Upload</option>
                                         </select>
                                       </div>
                                       <div class="field"><label>Due Date & Time</label><input type="datetime-local" value="${state.adminAssignmentForm.dueAt}" oninput="updateAdminAssignmentForm('dueAt', this.value)" /></div>
