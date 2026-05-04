@@ -4935,15 +4935,26 @@ function profileView() {
                       <strong>RM ${Number(o.total || 0).toFixed(2)}</strong>
                     </div>
                     <p class="muted">${escapeHtml(formatMalaysiaDateTime(o.createdAt) || "")}</p>
-                    <p class="muted">
-                      ${
-                        (o.items || []).length
-                          ? o.items
-                              .map((item) => `${escapeHtml(item.title || "Item")} x${escapeHtml(item.qty || 1)}`)
-                              .join(" · ")
-                          : "No item details"
-                      }
-                    </p>
+                    
+<div class="purchase-items">
+  ${
+    (o.items || []).length
+      ? o.items
+          .map(
+            (item) => `<div class="item">
+              <div class="split">
+                <div>
+                  <strong>${escapeHtml(item.title || "Item")}</strong>
+                  <p class="muted">Quantity: ${escapeHtml(item.qty || 1)}</p>
+                </div>
+                <strong>RM ${Number(item.price || 0).toFixed(2)}</strong>
+              </div>
+            </div>`
+          )
+          .join("")
+      : `<p class="muted">No item details</p>`
+  }
+</div>
                   </div>`
                 )
                 .join("")
