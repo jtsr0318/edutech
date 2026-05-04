@@ -4932,7 +4932,7 @@ function profileView() {
                   (o) => `<div class="item">
                     <div class="split">
                       <strong>Order #${escapeHtml(o.id)}</strong>
-                      <strong>RM ${Number(o.total || 0).toFixed(2)}</strong>
+                      <strong>Total: RM ${Number(o.total || 0).toFixed(2)}</strong>
                     </div>
                     <p class="muted">${escapeHtml(formatMalaysiaDateTime(o.createdAt) || "")}</p>
                     
@@ -4941,15 +4941,12 @@ function profileView() {
     (o.items || []).length
       ? o.items
           .map(
-            (item) => `<div class="item">
-              <div class="split">
-                <div>
-                  <strong>${escapeHtml(item.title || "Item")}</strong>
-                  <p class="muted">Quantity: ${escapeHtml(item.qty || 1)}</p>
-                </div>
-                <strong>RM ${Number(item.price || 0).toFixed(2)}</strong>
-              </div>
-            </div>`
+(item) => `<div class="item">
+  <strong>${escapeHtml(item.title || "Item")}</strong>
+  <p class="muted">
+    Quantity: ${escapeHtml(item.qty || 1)} · Unit Price: RM ${Number(item.price || 0).toFixed(2)}
+  </p>
+</div>`
           )
           .join("")
       : `<p class="muted">No item details</p>`
