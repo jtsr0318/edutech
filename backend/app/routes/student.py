@@ -612,6 +612,31 @@ def download_assignment_student_upload(assignment_id):
         headers={"Content-Disposition": f'attachment; filename="{_safe_download_filename(row.file_name)}"'},
     )
 
+@student_bp.delete("/assignments/<int:assignment_id>/student-upload")
+@require_auth()
+def delete_assignment_student_upload(assignment_id):
+    if _is_admin_user():
+        return {"message": "Students only."}, 403
+
+    assignment = Assignment.query.get(assignment_id)
+    if not assignment:
+        return {"message": "Assignment not found."}, 404
+
+    if assignment.course_id not in _enrolled_course_ids(g.current_user.id):
+        return {"message": "Not enrolled in this course."}, 403
+
+    row = AssignmentStudentUpload.query.filter_by(
+        assignment_id=assignment_id,
+        user_id=g.current_user.id
+    ).first()
+
+    if not row:
+        return {"message": "No file uploaded yet."}, 404
+
+    db.session.delete(row)
+    db.session.commit()
+
+    return {"status": "success", "message": "Uploaded file removed."}
 
 @student_bp.get("/comments")
 @require_auth()
