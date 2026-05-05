@@ -1741,29 +1741,41 @@ function postedTimeMalaysia(iso) {
 
 async function loadStudentChat() {
   const unreadBefore = state.chatState.unreadCount;
+  const scrollSnapshot = getChatScrollSnapshot(".chat-thread");
+
   state.supportLoading = true;
   state.supportError = "";
-
-  if (state.chatState.isOpen) render();
 
   try {
     const payload = await apiRequest("/chat/me");
     const incoming = Array.isArray(payload) ? payload : payload.items || [];
 
+    const oldMessageCount = (state.chatState.messages || []).length;
+
     state.supportMessages = incoming;
     state.chatState.messages = incoming;
     state.chatState.unreadCount = Number(payload.unreadCount || 0);
+
+    const newMessageCount = incoming.length;
+    const shouldRender =
+      state.chatState.isOpen ||
+      state.chatState.unreadCount !== unreadBefore ||
+      oldMessageCount !== newMessageCount;
+
+    if (shouldRender) {
+      render();
+      restoreChatScroll(".chat-thread", scrollSnapshot);
+    }
   } catch (err) {
     state.supportError = err.message || "Failed to load support chat.";
+    if (state.chatState.isOpen || state.chatState.unreadCount !== unreadBefore) {
+      render();
+      restoreChatScroll(".chat-thread", scrollSnapshot);
+    }
   } finally {
     state.supportLoading = false;
-      if (state.chatState.isOpen || state.chatState.unreadCount !== unreadBefore) {
-    const scrollSnapshot = getChatScrollSnapshot(".chat-widget .chat-thread");
-    render();
-    restoreChatScroll(".chat-widget .chat-thread", scrollSnapshot);
   }
 }
-
 function updateSupportDraft(value) {
   state.supportDraft = value;
 }
@@ -1788,7 +1800,35 @@ function closeChatWidget() {
   render();
 }
 
-function setupChatPolling() {
+function getChatScrollSnapshot(selector) {
+  const el = document.querySelector(selector);
+  if (!el) return null;
+
+  const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+
+  return {
+    scrollTop: el.scrollTop,
+    distanceFromBottom,
+    wasNearBottom: distanceFromBottom < 80,
+  };
+}
+
+function restoreChatScroll(selector, snapshot) {
+  if (!snapshot) return;
+
+  setTimeout(() => {
+    const el = document.querySelector(selector);
+    if (!el) return;
+
+    if (snapshot.wasNearBottom) {
+      el.scrollTop = el.scrollHeight;
+    } else {
+      el.scrollTop = snapshot.scrollTop;
+    }
+  }, 0);
+}
+  
+  function setupChatPolling() {
   if (chatPollingTimer) {
     clearInterval(chatPollingTimer);
     chatPollingTimer = null;
@@ -1818,6 +1858,7 @@ function setupAdminSupportPolling() {
           id: u.id,
           unreadCount: u.unreadCount,
           messageCount: u.messageCount,
+          lastMessageAt: u.lastMessageAt,
         }))
       );
 
@@ -1834,6 +1875,7 @@ function setupAdminSupportPolling() {
           id: u.id,
           unreadCount: u.unreadCount,
           messageCount: u.messageCount,
+          lastMessageAt: u.lastMessageAt,
         }))
       );
 
