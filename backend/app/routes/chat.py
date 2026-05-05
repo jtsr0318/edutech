@@ -2,7 +2,7 @@ from flask import Blueprint, g, request
 
 from ..auth import require_auth
 from ..extensions import db
-from ..models import ChatMessage, User
+from ..models import ChatMessage, ChatReadStatus, User
 
 chat_bp = Blueprint("chat", __name__)
 
@@ -16,6 +16,26 @@ def _msg_payload(msg: ChatMessage):
         "createdAt": msg.created_at.isoformat(),
     }
 
+def _read_status_for_student(student_id: int):
+    row = ChatReadStatus.query.filter_by(student_id=student_id).first()
+    if not row:
+        row = ChatReadStatus(
+            student_id=student_id,
+            admin_last_read_message_id=0,
+            student_last_read_message_id=0,
+        )
+        db.session.add(row)
+        db.session.commit()
+    return row
+
+
+def _latest_message_id(student_id: int):
+    msg = (
+        ChatMessage.query.filter_by(student_id=student_id)
+        .order_by(ChatMessage.id.desc())
+        .first()
+    )
+    return int(msg.id) if msg else 0
 
 @chat_bp.get("/chat/me")
 @require_auth()
@@ -25,8 +45,27 @@ def student_messages():
         .order_by(ChatMessage.created_at.asc())
         .all()
     )
-    return {"items": [_msg_payload(row) for row in rows]}
 
+    status = _read_status_for_student(g.current_user.id)
+
+    unread_count = ChatMessage.query.filter(
+        ChatMessage.student_id == g.current_user.id,
+        ChatMessage.sender_role == "admin",
+        ChatMessage.id > int(status.student_last_read_message_id or 0),
+    ).count()
+
+    return {
+        "items": [_msg_payload(row) for row in rows],
+        "unreadCount": unread_count,
+    }
+
+@chat_bp.post("/chat/me/read")
+@require_auth()
+def mark_student_chat_read():
+    status = _read_status_for_student(g.current_user.id)
+    status.student_last_read_message_id = _latest_message_id(g.current_user.id)
+    db.session.commit()
+    return {"status": "success"}
 
 @chat_bp.post("/chat/me")
 @require_auth()
@@ -66,7 +105,16 @@ def chat_users():
 
     items = []
     for user in users:
+        status = _read_status_for_student(user.id)
+
         message_count = ChatMessage.query.filter_by(student_id=user.id).count()
+
+        unread_count = ChatMessage.query.filter(
+            ChatMessage.student_id == user.id,
+            ChatMessage.sender_role == "student",
+            ChatMessage.id > int(status.admin_last_read_message_id or 0),
+        ).count()
+
         last_message = (
             ChatMessage.query.filter_by(student_id=user.id)
             .order_by(ChatMessage.created_at.desc())
@@ -79,17 +127,22 @@ def chat_users():
                 "name": user.name,
                 "email": user.email,
                 "messageCount": message_count,
+                "unreadCount": unread_count,
                 "lastMessageAt": last_message.created_at.isoformat() if last_message else None,
             }
         )
 
     return {"items": items}
 
-
 @chat_bp.get("/admin/chats/users/<int:user_id>/messages")
 @require_auth(role="admin")
 def admin_get_messages(user_id):
     rows = ChatMessage.query.filter_by(student_id=user_id).order_by(ChatMessage.created_at.asc()).all()
+
+    status = _read_status_for_student(user_id)
+    status.admin_last_read_message_id = _latest_message_id(user_id)
+    db.session.commit()
+
     return {"items": [_msg_payload(row) for row in rows]}
 
 
