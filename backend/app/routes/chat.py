@@ -63,7 +63,27 @@ def student_send_alias():
 @require_auth(role="admin")
 def chat_users():
     users = User.query.filter_by(role="user").order_by(User.name.asc()).all()
-    return {"items": [{"id": user.id, "name": user.name, "email": user.email} for user in users]}
+
+    items = []
+    for user in users:
+        message_count = ChatMessage.query.filter_by(student_id=user.id).count()
+        last_message = (
+            ChatMessage.query.filter_by(student_id=user.id)
+            .order_by(ChatMessage.created_at.desc())
+            .first()
+        )
+
+        items.append(
+            {
+                "id": user.id,
+                "name": user.name,
+                "email": user.email,
+                "messageCount": message_count,
+                "lastMessageAt": last_message.created_at.isoformat() if last_message else None,
+            }
+        )
+
+    return {"items": items}
 
 
 @chat_bp.get("/admin/chats/users/<int:user_id>/messages")
