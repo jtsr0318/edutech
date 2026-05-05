@@ -1757,7 +1757,10 @@ async function loadStudentChat() {
     state.supportError = err.message || "Failed to load support chat.";
   } finally {
     state.supportLoading = false;
-    if (state.chatState.isOpen || state.chatState.unreadCount !== unreadBefore) render();
+      if (state.chatState.isOpen || state.chatState.unreadCount !== unreadBefore) {
+    const scrollSnapshot = getChatScrollSnapshot(".chat-widget .chat-thread");
+    render();
+    restoreChatScroll(".chat-widget .chat-thread", scrollSnapshot);
   }
 }
 
@@ -1808,13 +1811,38 @@ function setupAdminSupportPolling() {
 
   adminSupportPollingTimer = setInterval(async () => {
     try {
+      const scrollSnapshot = getChatScrollSnapshot(".admin-chat-main .chat-thread");
+
+      const oldUserCounts = JSON.stringify(
+        (state.adminChatUsers || []).map((u) => ({
+          id: u.id,
+          unreadCount: u.unreadCount,
+          messageCount: u.messageCount,
+        }))
+      );
+
+      const oldMessageCount = (state.adminChatMessages || []).length;
+
       await adminFetchChatUsers();
 
       if (state.adminSelectedChatUserId) {
         await adminFetchSelectedChatMessages();
       }
 
-      render();
+      const newUserCounts = JSON.stringify(
+        (state.adminChatUsers || []).map((u) => ({
+          id: u.id,
+          unreadCount: u.unreadCount,
+          messageCount: u.messageCount,
+        }))
+      );
+
+      const newMessageCount = (state.adminChatMessages || []).length;
+
+      if (oldUserCounts !== newUserCounts || oldMessageCount !== newMessageCount) {
+        render();
+        restoreChatScroll(".admin-chat-main .chat-thread", scrollSnapshot);
+      }
     } catch {
       // ignore polling errors
     }
