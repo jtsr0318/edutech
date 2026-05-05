@@ -194,6 +194,14 @@ class ChatMessage(db.Model):
     message = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
+class ChatReadStatus(db.Model):
+    __tablename__ = "chat_read_status"
+
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True)
+    admin_last_read_message_id = db.Column(db.Integer, nullable=False, default=0)
+    student_last_read_message_id = db.Column(db.Integer, nullable=False, default=0)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class SavedAnnouncement(db.Model):
     __tablename__ = "saved_announcements"
