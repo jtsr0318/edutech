@@ -240,10 +240,38 @@ async function onStudentAssignmentUploadPick(assignmentId, input) {
   }
 }
 
-function openAssignmentAttachment(assignmentId) {
-  const id = String(assignmentId);
-  const url = `${API_BASE_URL}/assignments/${encodeURIComponent(id)}/attachment`;
-  window.open(url, "_blank", "noopener,noreferrer");
+async function openAssignmentAttachment(assignmentId) {
+  const previewTab = window.open("", "_blank");
+
+  if (previewTab) {
+    previewTab.document.write(`
+      <html>
+        <head><title>Opening attachment...</title></head>
+        <body style="font-family: Arial, sans-serif; padding: 24px;">
+          <h3>Opening attachment...</h3>
+          <p>Please wait while the file is loading.</p>
+        </body>
+      </html>
+    `);
+  }
+
+  try {
+    const blob = await fetchAuthorizedBinary(`/assignments/${encodeURIComponent(assignmentId)}/attachment`);
+    const url = URL.createObjectURL(blob);
+
+    if (previewTab) {
+      previewTab.location.href = url;
+    } else {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+
+    setTimeout(() => URL.revokeObjectURL(url), 180000);
+  } catch (err) {
+    if (previewTab) {
+      previewTab.document.body.innerHTML = `<p>Could not open attachment: ${escapeHtml(err.message || "Unknown error")}</p>`;
+    }
+    pushToast("error", err.message || "Could not open attachment.");
+  }
 }
 
 async function downloadAssignmentAttachment(assignmentId) {
@@ -321,10 +349,38 @@ async function deleteMyStudentAssignmentUpload(assignmentId) {
   }
 }
 
-function openMaterialFromApi(materialId) {
-  const id = String(materialId);
-  const url = `${API_BASE_URL}/materials/${encodeURIComponent(id)}/file`;
-  window.open(url, "_blank", "noopener,noreferrer");
+async function openMaterialFromApi(materialId) {
+  const previewTab = window.open("", "_blank");
+
+  if (previewTab) {
+    previewTab.document.write(`
+      <html>
+        <head><title>Opening file...</title></head>
+        <body style="font-family: Arial, sans-serif; padding: 24px;">
+          <h3>Opening file...</h3>
+          <p>Please wait while the file is loading.</p>
+        </body>
+      </html>
+    `);
+  }
+
+  try {
+    const blob = await fetchAuthorizedBinary(`/materials/${encodeURIComponent(materialId)}/file`);
+    const url = URL.createObjectURL(blob);
+
+    if (previewTab) {
+      previewTab.location.href = url;
+    } else {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+
+    setTimeout(() => URL.revokeObjectURL(url), 180000);
+  } catch (err) {
+    if (previewTab) {
+      previewTab.document.body.innerHTML = `<p>Could not open file: ${escapeHtml(err.message || "Unknown error")}</p>`;
+    }
+    pushToast("error", err.message || "Could not open file.");
+  }
 }
 
 async function downloadMaterialFromApi(materialId) {
