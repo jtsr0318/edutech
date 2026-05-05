@@ -1741,8 +1741,6 @@ function postedTimeMalaysia(iso) {
 
 async function loadStudentChat() {
   const unreadBefore = state.chatState.unreadCount;
-  const scrollSnapshot = getChatScrollSnapshot(".chat-thread");
-
   state.supportLoading = true;
   state.supportError = "";
 
@@ -1757,25 +1755,24 @@ async function loadStudentChat() {
     state.chatState.unreadCount = Number(payload.unreadCount || 0);
 
     const newMessageCount = incoming.length;
-    const shouldRender =
+
+    if (
       state.chatState.isOpen ||
       state.chatState.unreadCount !== unreadBefore ||
-      oldMessageCount !== newMessageCount;
-
-    if (shouldRender) {
+      oldMessageCount !== newMessageCount
+    ) {
       render();
-      restoreChatScroll(".chat-thread", scrollSnapshot);
     }
   } catch (err) {
     state.supportError = err.message || "Failed to load support chat.";
     if (state.chatState.isOpen || state.chatState.unreadCount !== unreadBefore) {
       render();
-      restoreChatScroll(".chat-thread", scrollSnapshot);
     }
   } finally {
     state.supportLoading = false;
   }
 }
+
 function updateSupportDraft(value) {
   state.supportDraft = value;
 }
@@ -1804,28 +1801,24 @@ function getChatScrollSnapshot(selector) {
   const el = document.querySelector(selector);
   if (!el) return null;
 
-  const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-
   return {
     scrollTop: el.scrollTop,
-    distanceFromBottom,
-    wasNearBottom: distanceFromBottom < 80,
+    scrollHeight: el.scrollHeight,
   };
 }
 
 function restoreChatScroll(selector, snapshot) {
   if (!snapshot) return;
 
-  setTimeout(() => {
+  const apply = () => {
     const el = document.querySelector(selector);
     if (!el) return;
 
-    if (snapshot.wasNearBottom) {
-      el.scrollTop = el.scrollHeight;
-    } else {
-      el.scrollTop = snapshot.scrollTop;
-    }
-  }, 0);
+    el.scrollTop = snapshot.scrollTop;
+  };
+
+  setTimeout(apply, 0);
+  setTimeout(apply, 80);
 }
   
   function setupChatPolling() {
@@ -1855,14 +1848,15 @@ function setupAdminSupportPolling() {
 
       const oldUserCounts = JSON.stringify(
         (state.adminChatUsers || []).map((u) => ({
-          id: u.id,
-          unreadCount: u.unreadCount,
-          messageCount: u.messageCount,
-          lastMessageAt: u.lastMessageAt,
+          id: String(u.id),
+          unreadCount: Number(u.unreadCount || 0),
+          messageCount: Number(u.messageCount || 0),
         }))
       );
 
-      const oldMessageCount = (state.adminChatMessages || []).length;
+      const oldMessageIds = JSON.stringify(
+        (state.adminChatMessages || []).map((m) => String(m.id))
+      );
 
       await adminFetchChatUsers();
 
@@ -1872,16 +1866,17 @@ function setupAdminSupportPolling() {
 
       const newUserCounts = JSON.stringify(
         (state.adminChatUsers || []).map((u) => ({
-          id: u.id,
-          unreadCount: u.unreadCount,
-          messageCount: u.messageCount,
-          lastMessageAt: u.lastMessageAt,
+          id: String(u.id),
+          unreadCount: Number(u.unreadCount || 0),
+          messageCount: Number(u.messageCount || 0),
         }))
       );
 
-      const newMessageCount = (state.adminChatMessages || []).length;
+      const newMessageIds = JSON.stringify(
+        (state.adminChatMessages || []).map((m) => String(m.id))
+      );
 
-      if (oldUserCounts !== newUserCounts || oldMessageCount !== newMessageCount) {
+      if (oldUserCounts !== newUserCounts || oldMessageIds !== newMessageIds) {
         render();
         restoreChatScroll(".admin-chat-main .chat-thread", scrollSnapshot);
       }
