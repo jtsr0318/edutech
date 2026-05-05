@@ -240,19 +240,10 @@ async function onStudentAssignmentUploadPick(assignmentId, input) {
   }
 }
 
-async function openAssignmentAttachment(assignmentId) {
+function openAssignmentAttachment(assignmentId) {
   const id = String(assignmentId);
-
-  try {
-    const blob = await fetchAuthorizedBinary(`/assignments/${encodeURIComponent(id)}/attachment`);
-    const url = URL.createObjectURL(blob);
-
-    window.open(url, "_blank", "noopener,noreferrer");
-
-    setTimeout(() => URL.revokeObjectURL(url), 180000);
-  } catch (err) {
-    pushToast("error", err.message || "Could not open attachment.");
-  }
+  const url = `${API_BASE_URL}/assignments/${encodeURIComponent(id)}/attachment`;
+  window.open(url, "_blank", "noopener,noreferrer");
 }
 
 async function downloadAssignmentAttachment(assignmentId) {
@@ -330,15 +321,10 @@ async function deleteMyStudentAssignmentUpload(assignmentId) {
   }
 }
 
-async function openMaterialFromApi(materialId) {
-  try {
-    const blob = await fetchAuthorizedBinary(`/materials/${encodeURIComponent(materialId)}/file`);
-    const url = URL.createObjectURL(blob);
-    window.open(url, "_blank", "noopener,noreferrer");
-    setTimeout(() => URL.revokeObjectURL(url), 180000);
-  } catch (err) {
-    pushToast("error", err.message || "Could not open file.");
-  }
+function openMaterialFromApi(materialId) {
+  const id = String(materialId);
+  const url = `${API_BASE_URL}/materials/${encodeURIComponent(id)}/file`;
+  window.open(url, "_blank", "noopener,noreferrer");
 }
 
 async function downloadMaterialFromApi(materialId) {
