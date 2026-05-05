@@ -441,6 +441,7 @@ let filterState = {
   type: state.bookFilters.type === "All" ? "" : state.bookFilters.type,
 };
 let chatPollingTimer = null;
+let adminSupportPollingTimer = null;
 let quizTimerTicker = null;
 let globalOutsideClickBound = false;
 
@@ -1121,6 +1122,7 @@ async function adminLogin(event) {
       }
       persistSession();
       await refreshAdminPageData();
+      setupAdminSupportPolling();
       pushToast("success", "Admin login successful.");
       render();
     } else {
@@ -1138,6 +1140,7 @@ function setAdminPage(page) {
   state.adminPage = page;
   if (state.isLoggedIn) persistSession();
   refreshAdminPageData();
+  setupAdminSupportPolling();
 }
 
 function updateAdminCourseForm(key, value) {
@@ -1740,16 +1743,16 @@ async function loadStudentChat() {
   const unreadBefore = state.chatState.unreadCount;
   state.supportLoading = true;
   state.supportError = "";
+
   if (state.chatState.isOpen) render();
+
   try {
     const payload = await apiRequest("/chat/me");
     const incoming = Array.isArray(payload) ? payload : payload.items || [];
-    const previousCount = state.chatState.messages.length;
+
     state.supportMessages = incoming;
     state.chatState.messages = incoming;
-    if (!state.chatState.isOpen && incoming.length > previousCount) {
-      state.chatState.unreadCount += incoming.length - previousCount;
-    }
+    state.chatState.unreadCount = Number(payload.unreadCount || 0);
   } catch (err) {
     state.supportError = err.message || "Failed to load support chat.";
   } finally {
@@ -1764,12 +1767,16 @@ function updateSupportDraft(value) {
 
 function toggleChatWidget() {
   state.chatState.isOpen = !state.chatState.isOpen;
+
   if (state.chatState.isOpen) {
     state.chatState.unreadCount = 0;
-    if (!state.chatState.messages.length && !state.supportLoading) {
-      loadStudentChat().then(() => render());
-    }
+
+    apiRequest("/chat/me/read", { method: "POST" })
+      .then(() => loadStudentChat())
+      .then(() => render())
+      .catch(() => {});
   }
+
   render();
 }
 
@@ -1786,7 +1793,32 @@ function setupChatPolling() {
   if (!state.isLoggedIn || state.authRole !== "student") return;
   chatPollingTimer = setInterval(() => {
     loadStudentChat();
-  }, 10000);
+  }, 2000);
+}
+
+function setupAdminSupportPolling() {
+  if (adminSupportPollingTimer) {
+    clearInterval(adminSupportPollingTimer);
+    adminSupportPollingTimer = null;
+  }
+
+  if (!state.isLoggedIn || state.authRole !== "admin" || state.adminPage !== "support") {
+    return;
+  }
+
+  adminSupportPollingTimer = setInterval(async () => {
+    try {
+      await adminFetchChatUsers();
+
+      if (state.adminSelectedChatUserId) {
+        await adminFetchSelectedChatMessages();
+      }
+
+      render();
+    } catch {
+      // ignore polling errors
+    }
+  }, 2000);
 }
 
 function chatInputKeydown(event) {
@@ -1812,10 +1844,7 @@ async function sendSupportMessage() {
 }
 
 function getAdminChatUnreadCount(user) {
-  const userId = String(user.id);
-  const total = Number(user.messageCount || 0);
-  const read = Number(state.adminChatReadCounts[userId] || 0);
-  return Math.max(0, total - read);
+  return Number(user.unreadCount || 0);
 }
 
 function markAdminChatAsRead(userId) {
@@ -1827,14 +1856,13 @@ function markAdminChatAsRead(userId) {
 
 async function selectAdminChatUser(userId) {
   state.adminSelectedChatUserId = String(userId);
-  markAdminChatAsRead(userId);
 
   state.adminLoading = true;
   render();
 
   try {
     await adminFetchSelectedChatMessages();
-    state.adminChatReadCounts[String(userId)] = (state.adminChatMessages || []).length;
+    await adminFetchChatUsers();
   } catch (err) {
     state.adminError = err.message || "Failed to load user chat.";
   } finally {
@@ -2150,6 +2178,12 @@ function logout() {
     clearInterval(chatPollingTimer);
     chatPollingTimer = null;
   }
+  
+  if (adminSupportPollingTimer) {
+  clearInterval(adminSupportPollingTimer);
+  adminSupportPollingTimer = null;
+  }
+  
   if (quizTimerTicker) {
     clearInterval(quizTimerTicker);
     quizTimerTicker = null;
