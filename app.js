@@ -315,16 +315,35 @@ async function downloadMyStudentAssignmentUpload(assignmentId, downloadName) {
 }
 
 async function viewMyStudentAssignmentUpload(assignmentId) {
-  const id = String(assignmentId);
+  const previewTab = window.open("", "_blank");
+
+  if (previewTab) {
+    previewTab.document.write(`
+      <html>
+        <head><title>Opening your file...</title></head>
+        <body style="font-family: Arial, sans-serif; padding: 24px;">
+          <h3>Opening your file...</h3>
+          <p>Please wait while your uploaded file is loading.</p>
+        </body>
+      </html>
+    `);
+  }
 
   try {
-    const blob = await fetchAuthorizedBinary(`/assignments/${encodeURIComponent(id)}/student-upload`);
+    const blob = await fetchAuthorizedBinary(`/assignments/${encodeURIComponent(assignmentId)}/student-upload`);
     const url = URL.createObjectURL(blob);
 
-    window.open(url, "_blank", "noopener,noreferrer");
+    if (previewTab) {
+      previewTab.location.href = url;
+    } else {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
 
     setTimeout(() => URL.revokeObjectURL(url), 180000);
   } catch (err) {
+    if (previewTab) {
+      previewTab.document.body.innerHTML = `<p>Could not open your uploaded file: ${escapeHtml(err.message || "Unknown error")}</p>`;
+    }
     pushToast("error", err.message || "Could not open your uploaded file.");
   }
 }
@@ -1173,12 +1192,37 @@ async function toggleAdminAssignmentSubmissions(assignmentId) {
 }
 
 async function adminOpenStudentSubmissionFile(assignmentId, userId) {
+  const previewTab = window.open("", "_blank");
+
+  if (previewTab) {
+    previewTab.document.write(`
+      <html>
+        <head><title>Opening student file...</title></head>
+        <body style="font-family: Arial, sans-serif; padding: 24px;">
+          <h3>Opening student file...</h3>
+          <p>Please wait while the submitted file is loading.</p>
+        </body>
+      </html>
+    `);
+  }
+
   try {
-    const blob = await fetchAuthorizedBinary(`/admin/assignments/${encodeURIComponent(assignmentId)}/submissions/${encodeURIComponent(userId)}/file`);
+    const blob = await fetchAuthorizedBinary(
+      `/admin/assignments/${encodeURIComponent(assignmentId)}/submissions/${encodeURIComponent(userId)}/file`
+    );
     const url = URL.createObjectURL(blob);
-    window.open(url, "_blank", "noopener,noreferrer");
+
+    if (previewTab) {
+      previewTab.location.href = url;
+    } else {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+
     setTimeout(() => URL.revokeObjectURL(url), 180000);
   } catch (err) {
+    if (previewTab) {
+      previewTab.document.body.innerHTML = `<p>Could not open student file: ${escapeHtml(err.message || "Unknown error")}</p>`;
+    }
     pushToast("error", err.message || "Could not open student file.");
   }
 }
