@@ -1946,14 +1946,23 @@ async function sendAdminChatReply() {
     pushToast("error", "Select a user and type a message.");
     return;
   }
+
   try {
     await apiRequest(`/admin/chats/users/${state.adminSelectedChatUserId}/messages`, {
       method: "POST",
       body: { message: text },
     });
+
     state.adminChatDraft = "";
     await adminFetchSelectedChatMessages();
+    await adminFetchChatUsers();
+
     render();
+
+    setTimeout(() => {
+      const el = document.querySelector(".admin-chat-main .chat-thread");
+      if (el) el.scrollTop = el.scrollHeight;
+    }, 0);
   } catch (err) {
     pushToast("error", err.message || "Failed to send reply.");
   }
