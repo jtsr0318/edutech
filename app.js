@@ -1745,29 +1745,29 @@ async function loadStudentChat() {
   state.supportError = "";
 
   try {
+    const oldMessageIds = JSON.stringify(
+      (state.chatState.messages || []).map((m) => String(m.id))
+    );
+
     const payload = await apiRequest("/chat/me");
     const incoming = Array.isArray(payload) ? payload : payload.items || [];
-
-    const oldMessageCount = (state.chatState.messages || []).length;
 
     state.supportMessages = incoming;
     state.chatState.messages = incoming;
     state.chatState.unreadCount = Number(payload.unreadCount || 0);
 
-    const newMessageCount = incoming.length;
+    const newMessageIds = JSON.stringify(
+      incoming.map((m) => String(m.id))
+    );
 
-    if (
-      state.chatState.isOpen ||
-      state.chatState.unreadCount !== unreadBefore ||
-      oldMessageCount !== newMessageCount
-    ) {
+    const hasMessageChanged = oldMessageIds !== newMessageIds;
+    const hasUnreadChanged = state.chatState.unreadCount !== unreadBefore;
+
+    if (hasMessageChanged || hasUnreadChanged) {
       render();
     }
   } catch (err) {
     state.supportError = err.message || "Failed to load support chat.";
-    if (state.chatState.isOpen || state.chatState.unreadCount !== unreadBefore) {
-      render();
-    }
   } finally {
     state.supportLoading = false;
   }
