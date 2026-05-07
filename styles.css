@@ -2906,3 +2906,17 @@ textarea {
     grid-template-columns: 1fr;
   }
 }
+
+.option-btn-correct {
+  border-color: #22c55e !important;
+  background: #dcfce7 !important;
+  color: #166534 !important;
+  font-weight: 800;
+}
+
+.option-btn-wrong {
+  border-color: #ef4444 !important;
+  background: #fee2e2 !important;
+  color: #991b1b !important;
+  font-weight: 800;
+}
