@@ -2892,7 +2892,7 @@ function retryMcqQuiz(assignmentId) {
   state.quizDraftAnswers[id] = {};
   delete state.selectedMcqOption[id];
   delete state.quizStartAtByAssignment[id];
-  pushToast("info", "已清空本题作答，可重新开始；计时将在你再次选题后开始。");
+  pushToast("info", "Your previous answers have been cleared. The timer will restart when you select an answer again.");
   render();
 }
 
@@ -4698,16 +4698,42 @@ if (assignment.type === "upload") {
               return `<div class="assignment-classroom-mcq-q">
                 <strong>Q${idx + 1}. ${escapeHtml(String(q.question || ""))}</strong>
                 <div class="option-grid">
-                  ${(q.options || [])
-                    .map(
-                      (opt) =>
-                        locked
-                          ? `<button type="button" class="option-btn" disabled>${opt}</button>`
-                          : `<button type="button" class="option-btn ${selected === opt ? "option-btn-selected" : ""}" onclick="selectMcqOption('${assignment.id}', '${qid}', '${String(opt).replace(/'/g, "\\'")}')">${opt}</button>`
-                    )
-                    .join("")}
+${(q.options || [])
+  .map((opt) => {
+    const correctAnswer = String(q.answer || "");
+    const studentAnswer = latestAttempt?.answers?.[qid] || selected;
+    const hasSubmitted = !!latestAttempt?.createdAt && !inRetry;
+
+    const isCorrectOption = hasSubmitted && String(opt) === correctAnswer;
+    const isWrongSelected =
+      hasSubmitted &&
+      String(opt) === String(studentAnswer) &&
+      String(studentAnswer) !== correctAnswer;
+
+    const optionClass = [
+      "option-btn",
+      selected === opt && !hasSubmitted ? "option-btn-selected" : "",
+      isCorrectOption ? "option-btn-correct" : "",
+      isWrongSelected ? "option-btn-wrong" : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    const safeOpt = escapeHtml(String(opt));
+    const safeClickOpt = String(opt).replace(/'/g, "\\'");
+
+    return hasSubmitted || locked
+      ? `<button type="button" class="${optionClass}" disabled>${safeOpt}</button>`
+      : `<button type="button" class="${optionClass}" onclick="selectMcqOption('${assignment.id}', '${qid}', '${safeClickOpt}')">${safeOpt}</button>`;
+  })
+  .join("")}
                 </div>
-                ${showPerQExpl ? `<p class="muted">Explanation: ${escapeHtml(qExpl)}</p>` : ""}
+                ${
+  latestAttempt?.createdAt && !inRetry
+    ? `<p class="muted"><strong>Correct answer:</strong> ${escapeHtml(String(q.answer || ""))}</p>`
+    : ""
+}
+${showPerQExpl ? `<p class="muted">Explanation: ${escapeHtml(qExpl)}</p>` : ""}
               </div>`;
             })
             .join("")
@@ -4728,7 +4754,7 @@ if (assignment.type === "upload") {
         }
         ${
           !locked && latestAttempt?.createdAt
-            ? `<button type="button" class="button button-secondary" onclick="retryMcqQuiz('${assignment.id}')">再次作答</button>`
+            ? `<button type="button" class="button button-secondary" onclick="retryMcqQuiz('${assignment.id}')">Retry Quiz</button>`
             : ""
         }
       </div>
