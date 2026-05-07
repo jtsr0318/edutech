@@ -1694,14 +1694,64 @@ function renderAdminBookCatalogOnly() {
 async function handleAdminBookImageFile(inputEl) {
   const file = inputEl?.files?.[0];
   if (!file) return;
+
   try {
     const formData = new FormData();
     formData.append("file", file);
-    const res = await apiRequest("/admin/uploads/image", { method: "POST", body: formData });
-    state.adminBookForm.image = String(res?.item?.url || "");
-    pushToast("success", "Book image uploaded.");
-    inputEl.value = "";
-    render();
+
+    const res = await apiRequest("/admin/uploads/image", {
+      method: "POST",
+      body: formData,
+    });
+
+    const uploadedUrl = String(res?.item?.url || "").trim();
+
+    if (!uploadedUrl) {
+      pushToast("error", "Image uploaded, but no image URL was returned.");
+      return;
+    }
+
+    state.adminBookForm.image = uploadedUrl;
+
+    if (inputEl) inputEl.value = "";
+
+    if (state.adminBookForm.id) {
+      const payload = {
+        title: String(state.adminBookForm.title || "").trim(),
+        price: Number(state.adminBookForm.price || 0),
+        country: String(state.adminBookForm.country || "").trim(),
+        area: String(state.adminBookForm.area || "").trim(),
+        type: String(state.adminBookForm.type || "").trim(),
+        category: String(state.adminBookForm.category || "").trim(),
+        description: String(state.adminBookForm.description || "").trim(),
+        image: uploadedUrl,
+        stock: Number(state.adminBookForm.stock || 0),
+      };
+
+      if (!payload.title) {
+        pushToast("error", "Book title is required before saving image.");
+        render();
+        return;
+      }
+
+      await apiRequest(`/admin/books/${state.adminBookForm.id}`, {
+        method: "PUT",
+        body: payload,
+      });
+
+      await adminFetchBooks();
+      await loadDataDrivenCollections();
+
+      pushToast("success", "Book image uploaded and saved.");
+      render();
+
+      if (state.page === "admin" && state.adminPage === "books") {
+        renderAdminBookCatalogOnly();
+      }
+    } else {
+      pushToast("success", "Book image uploaded. Click Add Book to save this new product.");
+      render();
+    }
   } catch (err) {
     pushToast("error", err.message || "Failed to upload book image.");
   }
@@ -4282,7 +4332,12 @@ function bookstoreCardsMarkup(filteredBooks) {
     .map(
       (book) => `
           <article class="card bookstore-card">
-            <img src="${escapeHtml(resolvePublicApiUrl(book.image))}" alt="${book.title}" class="book-image" />
+            <img
+               src="${escapeHtml(resolvePublicApiUrl(book.image || ""))}"
+               alt="${escapeHtml(book.title || "Book cover")}"
+               class="book-image"
+               onerror="this.onerror=null; this.src='https://images.unsplash.com/photo-1512820790803-83ca734da794?auto=format&fit=crop&w=900&q=80';"
+            />
             <div class="book-card-body">
               <div class="split">
                 <span class="category-label">${book.category}</span>
