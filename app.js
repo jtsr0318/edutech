@@ -2468,22 +2468,33 @@ function logout() {
   state.adminStreamCourseId = "";
   state.adminMaterialForm = { courseId: "", name: "", commentText: "" };
   state.adminAnnouncementForm = { courseId: "", title: "", text: "" };
-  state.adminAssignmentForm = {
-    courseId: "",
-    title: "",
-    type: "short",
-    dueAt: "",
-    instructions: "",
-    timerSeconds: 60,
-    quizQuestion: "",
-    quizOptionA: "",
-    quizOptionB: "",
-    quizOptionC: "",
-    quizOptionD: "",
-    quizAnswerKey: "A",
-    quizExplanation: "",
-    commentText: "",
-  };
+state.adminAssignmentForm = {
+  courseId: "",
+  title: "",
+  type: "short",
+  dueAt: "",
+  instructions: "",
+  timerSeconds: 60,
+  quizQuestion: "",
+  quizOptionA: "",
+  quizOptionB: "",
+  quizOptionC: "",
+  quizOptionD: "",
+  quizAnswerKey: "A",
+  quizExplanation: "",
+  quizQuestions: [
+    {
+      question: "",
+      optionA: "",
+      optionB: "",
+      optionC: "",
+      optionD: "",
+      answerKey: "A",
+      explanation: "",
+    },
+  ],
+  commentText: "",
+};
   state.adminCommentForm = { courseId: "", contentType: "announcement", contentId: "", text: "" };
   state.adminStudioTab = "materials";
   localStorage.removeItem("edutech_admin_studio_drafts");
@@ -3024,11 +3035,26 @@ function retryMcqQuiz(assignmentId) {
 
 async function submitMcqAnswer(assignmentId) {
   const assignment = (data.assignments || []).find((item) => String(item.id) === String(assignmentId)) || {};
-  const answers = state.quizDraftAnswers[assignmentId] || {};
-  if (!Object.keys(answers).length) {
-    pushToast("error", "Please answer at least one question.");
-    return;
-  }
+const answers = state.quizDraftAnswers[assignmentId] || {};
+const questions =
+  assignment.quizPayload && Array.isArray(assignment.quizPayload.questions)
+    ? assignment.quizPayload.questions
+    : [];
+
+if (!questions.length) {
+  pushToast("error", "This quiz has no questions.");
+  return;
+}
+
+const missingQuestions = questions.filter((q, index) => {
+  const qid = String(q.id || `q${index + 1}`);
+  return !answers[qid];
+});
+
+if (missingQuestions.length) {
+  pushToast("error", `Please answer all questions. Missing: ${missingQuestions.length}`);
+  return;
+}
   const timerSeconds = Number(assignment?.timerSeconds || 0);
   if (timerSeconds > 0 && state.quizStartAtByAssignment[assignmentId]) {
     const elapsed = Math.floor((Date.now() - state.quizStartAtByAssignment[assignmentId]) / 1000);
