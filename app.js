@@ -43,6 +43,17 @@ const state = {
     quizOptionD: "",
     quizAnswerKey: "A",
     quizExplanation: "",
+    quizQuestions: [
+    {
+      question: "",
+      optionA: "",
+      optionB: "",
+      optionC: "",
+      optionD: "",
+      answerKey: "A",
+      explanation: "",
+    },
+  ],
     commentText: "",
   },
   adminCommentForm: { courseId: "", contentType: "announcement", contentId: "", text: "" },
@@ -1359,6 +1370,62 @@ function updateAdminAssignmentForm(key, value) {
     render();
   }
 }
+
+function updateAdminQuizQuestion(index, key, value) {
+  if (!Array.isArray(state.adminAssignmentForm.quizQuestions)) {
+    state.adminAssignmentForm.quizQuestions = [];
+  }
+
+  if (!state.adminAssignmentForm.quizQuestions[index]) {
+    state.adminAssignmentForm.quizQuestions[index] = {
+      question: "",
+      optionA: "",
+      optionB: "",
+      optionC: "",
+      optionD: "",
+      answerKey: "A",
+      explanation: "",
+    };
+  }
+
+  state.adminAssignmentForm.quizQuestions[index][key] = value;
+  persistAdminStudioDrafts();
+}
+
+function addAdminQuizQuestion() {
+  if (!Array.isArray(state.adminAssignmentForm.quizQuestions)) {
+    state.adminAssignmentForm.quizQuestions = [];
+  }
+
+  state.adminAssignmentForm.quizQuestions.push({
+    question: "",
+    optionA: "",
+    optionB: "",
+    optionC: "",
+    optionD: "",
+    answerKey: "A",
+    explanation: "",
+  });
+
+  persistAdminStudioDrafts();
+  render();
+}
+
+function removeAdminQuizQuestion(index) {
+  if (!Array.isArray(state.adminAssignmentForm.quizQuestions)) {
+    state.adminAssignmentForm.quizQuestions = [];
+  }
+
+  if (state.adminAssignmentForm.quizQuestions.length <= 1) {
+    pushToast("error", "A quiz must have at least one question.");
+    return;
+  }
+
+  state.adminAssignmentForm.quizQuestions.splice(index, 1);
+  persistAdminStudioDrafts();
+  render();
+}
+
 function updateAdminCommentForm(key, value) {
   state.adminCommentForm[key] = value;
   if (key === "courseId" || key === "contentType") {
@@ -1460,25 +1527,73 @@ async function saveAdminAssignment() {
       rubricTemplate: "",
       timerSeconds: Number(state.adminAssignmentForm.timerSeconds || 0),
     };
-    if (payload.type === "mcq") {
-      const q = String(state.adminAssignmentForm.quizQuestion || "").trim();
-      const a = String(state.adminAssignmentForm.quizOptionA || "").trim();
-      const b = String(state.adminAssignmentForm.quizOptionB || "").trim();
-      const c = String(state.adminAssignmentForm.quizOptionC || "").trim();
-      const d = String(state.adminAssignmentForm.quizOptionD || "").trim();
-      const answerKey = String(state.adminAssignmentForm.quizAnswerKey || "A").trim().toUpperCase();
-      const explanation = String(state.adminAssignmentForm.quizExplanation || "").trim();
-      const answerMap = { A: a, B: b, C: c, D: d };
-      const answer = answerMap[answerKey] || "";
-      if (!q || !a || !b || !c || !d || !answer) {
-        pushToast("error", "Please fill quiz question, all options, and select correct answer.");
-        return;
-      }
-      payload.quizPayload = {
-        afterSubmitNote: explanation,
-        questions: [{ id: "q1", question: q, options: [a, b, c, d], answer, explanation }],
+if (payload.type === "mcq") {
+  const rawQuestions = Array.isArray(state.adminAssignmentForm.quizQuestions)
+    ? state.adminAssignmentForm.quizQuestions
+    : [];
+
+  const sourceQuestions = rawQuestions.length
+    ? rawQuestions
+    : [
+        {
+          question: state.adminAssignmentForm.quizQuestion,
+          optionA: state.adminAssignmentForm.quizOptionA,
+          optionB: state.adminAssignmentForm.quizOptionB,
+          optionC: state.adminAssignmentForm.quizOptionC,
+          optionD: state.adminAssignmentForm.quizOptionD,
+          answerKey: state.adminAssignmentForm.quizAnswerKey || "A",
+          explanation: state.adminAssignmentForm.quizExplanation,
+        },
+      ];
+
+  const questions = sourceQuestions
+    .map((q, index) => {
+      const question = String(q.question || "").trim();
+      const a = String(q.optionA || "").trim();
+      const b = String(q.optionB || "").trim();
+      const c = String(q.optionC || "").trim();
+      const d = String(q.optionD || "").trim();
+      const answerKey = String(q.answerKey || "A").trim().toUpperCase();
+      const explanation = String(q.explanation || "").trim();
+
+      const answerMap = {
+        A: a,
+        B: b,
+        C: c,
+        D: d,
       };
-    }
+
+      const answer = answerMap[answerKey] || "";
+
+      if (!question || !a || !b || !c || !d || !answer) {
+        return null;
+      }
+
+      return {
+        id: `q${index + 1}`,
+        question,
+        options: [a, b, c, d],
+        answer,
+        explanation,
+      };
+    })
+    .filter(Boolean);
+
+  if (!questions.length) {
+    pushToast("error", "Please add at least one complete quiz question with four options and a correct answer.");
+    return;
+  }
+
+  if (questions.length !== sourceQuestions.length) {
+    pushToast("error", "Please complete all quiz questions before saving.");
+    return;
+  }
+
+  payload.quizPayload = {
+    afterSubmitNote: "Review your answers and check the highlighted correct answers below.",
+    questions,
+  };
+}
     if (!courseId || !payload.title) {
       pushToast("error", "Course and assignment title are required.");
       return;
@@ -1515,22 +1630,33 @@ async function saveAdminAssignment() {
         },
       });
     }
-    state.adminAssignmentForm = {
-      courseId: String(state.adminStreamCourseId || ""),
-      title: "",
-      type: "short",
-      dueAt: "",
-      instructions: "",
-      timerSeconds: 60,
-      quizQuestion: "",
-      quizOptionA: "",
-      quizOptionB: "",
-      quizOptionC: "",
-      quizOptionD: "",
-      quizAnswerKey: "A",
-      quizExplanation: "",
-      commentText: "",
-    };
+state.adminAssignmentForm = {
+  courseId: String(state.adminStreamCourseId || ""),
+  title: "",
+  type: "short",
+  dueAt: "",
+  instructions: "",
+  timerSeconds: 60,
+  quizQuestion: "",
+  quizOptionA: "",
+  quizOptionB: "",
+  quizOptionC: "",
+  quizOptionD: "",
+  quizAnswerKey: "A",
+  quizExplanation: "",
+  quizQuestions: [
+    {
+      question: "",
+      optionA: "",
+      optionB: "",
+      optionC: "",
+      optionD: "",
+      answerKey: "A",
+      explanation: "",
+    },
+  ],
+  commentText: "",
+};
     persistAdminStudioDrafts();
     await loadDataDrivenCollections();
     pushToast("success", "Assignment created.");
@@ -3684,25 +3810,96 @@ function adminPageContent() {
                                       </div>
                                       <div class="field"><label>Due Date & Time</label><input type="datetime-local" value="${state.adminAssignmentForm.dueAt}" oninput="updateAdminAssignmentForm('dueAt', this.value)" /></div>
                                       <div class="field" style="grid-column:1 / -1;"><label>Instructions for students (optional)</label><textarea placeholder="What students should read before starting..." oninput="updateAdminAssignmentForm('instructions', this.value)">${state.adminAssignmentForm.instructions || ""}</textarea></div>
-                                      ${
-                                        state.adminAssignmentForm.type === "mcq"
-                                          ? `<div class="field"><label>Quiz Timer (seconds)</label><input type="number" min="10" value="${state.adminAssignmentForm.timerSeconds || 60}" oninput="updateAdminAssignmentForm('timerSeconds', this.value)" /></div>
-                                             <div class="field" style="grid-column:1 / -1;"><label>Quiz Question</label><input value="${state.adminAssignmentForm.quizQuestion || ""}" oninput="updateAdminAssignmentForm('quizQuestion', this.value)" /></div>
-                                             <div class="field"><label>Option A</label><input value="${state.adminAssignmentForm.quizOptionA || ""}" oninput="updateAdminAssignmentForm('quizOptionA', this.value)" /></div>
-                                             <div class="field"><label>Option B</label><input value="${state.adminAssignmentForm.quizOptionB || ""}" oninput="updateAdminAssignmentForm('quizOptionB', this.value)" /></div>
-                                             <div class="field"><label>Option C</label><input value="${state.adminAssignmentForm.quizOptionC || ""}" oninput="updateAdminAssignmentForm('quizOptionC', this.value)" /></div>
-                                             <div class="field"><label>Option D</label><input value="${state.adminAssignmentForm.quizOptionD || ""}" oninput="updateAdminAssignmentForm('quizOptionD', this.value)" /></div>
-                                             <div class="field" style="grid-column:1 / -1;"><label>Correct Answer</label>
-                                               <select onchange="updateAdminAssignmentForm('quizAnswerKey', this.value)">
-                                                 <option value="A" ${String(state.adminAssignmentForm.quizAnswerKey || "A") === "A" ? "selected" : ""}>Option A</option>
-                                                 <option value="B" ${String(state.adminAssignmentForm.quizAnswerKey || "A") === "B" ? "selected" : ""}>Option B</option>
-                                                 <option value="C" ${String(state.adminAssignmentForm.quizAnswerKey || "A") === "C" ? "selected" : ""}>Option C</option>
-                                                 <option value="D" ${String(state.adminAssignmentForm.quizAnswerKey || "A") === "D" ? "selected" : ""}>Option D</option>
-                                               </select>
-                                             </div>
-                                             <div class="field" style="grid-column:1 / -1;"><label>Quiz explanation (shown after students submit; still visible if they use 再次作答)</label><textarea placeholder="Why the correct answer is right, or general feedback..." oninput="updateAdminAssignmentForm('quizExplanation', this.value)">${state.adminAssignmentForm.quizExplanation || ""}</textarea></div>`
-                                          : ""
-                                      }
+${
+  state.adminAssignmentForm.type === "mcq"
+    ? `<div class="field">
+         <label>Quiz Timer (seconds)</label>
+         <input type="number" min="10" value="${state.adminAssignmentForm.timerSeconds || 60}" oninput="updateAdminAssignmentForm('timerSeconds', this.value)" />
+       </div>
+
+       <div class="field" style="grid-column:1 / -1;">
+         <div class="split">
+           <div>
+             <label>Quiz Questions</label>
+             <p class="muted">Add multiple questions for this interactive quiz.</p>
+           </div>
+           <button type="button" class="button button-secondary" onclick="addAdminQuizQuestion()">Add New Question</button>
+         </div>
+       </div>
+
+       ${
+         (state.adminAssignmentForm.quizQuestions || [
+           {
+             question: "",
+             optionA: "",
+             optionB: "",
+             optionC: "",
+             optionD: "",
+             answerKey: "A",
+             explanation: "",
+           },
+         ])
+           .map((q, index) => {
+             const answerKey = String(q.answerKey || "A");
+
+             return `
+               <div class="card admin-surface" style="grid-column:1 / -1;">
+                 <div class="split">
+                   <h4>Question ${index + 1}</h4>
+                   ${
+                     (state.adminAssignmentForm.quizQuestions || []).length > 1
+                       ? `<button type="button" class="button button-secondary" onclick="removeAdminQuizQuestion(${index})">Remove</button>`
+                       : ""
+                   }
+                 </div>
+
+                 <div class="field">
+                   <label>Question</label>
+                   <input value="${escapeHtml(q.question || "")}" oninput="updateAdminQuizQuestion(${index}, 'question', this.value)" />
+                 </div>
+
+                 <div class="grid-2">
+                   <div class="field">
+                     <label>Option A</label>
+                     <input value="${escapeHtml(q.optionA || "")}" oninput="updateAdminQuizQuestion(${index}, 'optionA', this.value)" />
+                   </div>
+
+                   <div class="field">
+                     <label>Option B</label>
+                     <input value="${escapeHtml(q.optionB || "")}" oninput="updateAdminQuizQuestion(${index}, 'optionB', this.value)" />
+                   </div>
+
+                   <div class="field">
+                     <label>Option C</label>
+                     <input value="${escapeHtml(q.optionC || "")}" oninput="updateAdminQuizQuestion(${index}, 'optionC', this.value)" />
+                   </div>
+
+                   <div class="field">
+                     <label>Option D</label>
+                     <input value="${escapeHtml(q.optionD || "")}" oninput="updateAdminQuizQuestion(${index}, 'optionD', this.value)" />
+                   </div>
+                 </div>
+
+                 <div class="field">
+                   <label>Correct Answer</label>
+                   <select onchange="updateAdminQuizQuestion(${index}, 'answerKey', this.value)">
+                     <option value="A" ${answerKey === "A" ? "selected" : ""}>Option A</option>
+                     <option value="B" ${answerKey === "B" ? "selected" : ""}>Option B</option>
+                     <option value="C" ${answerKey === "C" ? "selected" : ""}>Option C</option>
+                     <option value="D" ${answerKey === "D" ? "selected" : ""}>Option D</option>
+                   </select>
+                 </div>
+
+                 <div class="field">
+                   <label>Explanation</label>
+                   <textarea placeholder="Explain why the correct answer is right." oninput="updateAdminQuizQuestion(${index}, 'explanation', this.value)">${escapeHtml(q.explanation || "")}</textarea>
+                 </div>
+               </div>`;
+           })
+           .join("")
+       }`
+    : ""
+}
                                       <div class="field" style="grid-column:1 / -1;"><label>Attachment (PDF / DOCX / PPT… optional)</label><input id="admin-assignment-attachment" type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.zip,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" /></div>
                                       <div class="field" style="grid-column:1 / -1;"><label>Comment for this Assignment (optional)</label><textarea placeholder="Explain submission requirement or rubric..." oninput="updateAdminAssignmentForm('commentText', this.value)">${state.adminAssignmentForm.commentText || ""}</textarea></div>
                                     </div>
